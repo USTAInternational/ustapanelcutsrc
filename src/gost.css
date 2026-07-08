@@ -1,0 +1,110 @@
+.surface-svg .panel-shape {
+  stroke-width: 4;
+}
+
+.surface-svg:not(.combined-unfolding) .surface-outline {
+  stroke: none;
+}
+
+.surface-svg .selected .panel-shape {
+  stroke-width: 8;
+}
+
+.combined-unfolding .panel-shape {
+  stroke-width: 0.8;
+}
+
+.combined-unfolding .selected .panel-shape {
+  stroke-width: 1.6;
+}
+
+.gost-scroll {
+  border: 0;
+  max-height: calc(100% - 50px);
+  background: #fff;
+  padding: 4px 4px 16px;
+}
+
+.gost-title {
+  margin: 0 0 12px;
+  text-align: center;
+  font-family: "Arial Narrow", "Roboto Condensed", Arial, sans-serif;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: #333;
+}
+
+.gost-spec {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  border: 3px solid #333;
+  background: #fff;
+  color: #333;
+  font-family: "Arial Narrow", "Roboto Condensed", Arial, sans-serif;
+  font-size: 18px;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.gost-spec col.gost-pos {
+  width: 8%;
+}
+
+.gost-spec col.gost-designation {
+  width: 32%;
+}
+
+.gost-spec col.gost-name {
+  width: 35%;
+}
+
+.gost-spec col.gost-qty {
+  width: 5.5%;
+}
+
+.gost-spec col.gost-mass {
+  width: 8%;
+}
+
+.gost-spec col.gost-note {
+  width: 11.5%;
+}
+
+.gost-spec th,
+.gost-spec td {
+  border: 2px solid #333;
+  padding: 11px 8px;
+  text-align: center;
+  vertical-align: middle;
+  background: #fff;
+}
+
+.gost-spec thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 86px;
+  background: #fff;
+  color: #333;
+  font-weight: 500;
+}
+
+.gost-spec td:nth-child(2),
+.gost-spec td:nth-child(3),
+.gost-spec td:nth-child(6) {
+  text-align: left;
+}
+
+.gost-spec tbody tr {
+  cursor: pointer;
+}
+
+.gost-spec tbody tr:hover td {
+  background: #f3f7fb;
+}
+
+.gost-spec tr.selected-row td {
+  background: #d8ebfc;
+}
