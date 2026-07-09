@@ -6,7 +6,14 @@ import {
   SOIL_TYPES,
 } from "../calculation/structural";
 import type { ColumnType, FoundationType } from "../domain/types";
-import { INSULATION_OPTIONS } from "../domain/panelOptions";
+import { defaultProject } from "../domain/defaultProject";
+import {
+  INSULATION_OPTIONS,
+  PANEL_SERIES_OPTIONS,
+  panelSeriesDefaults,
+} from "../domain/panelOptions";
+import { importPriceSheet } from "../domain/priceImport";
+import { PROJECT_TEMPLATES } from "../domain/projectTemplates";
 import { RAL_COLORS } from "../domain/ral";
 import { KG_REGIONS, regionById } from "../domain/regions";
 import type { Opening } from "../domain/types";
@@ -164,9 +171,38 @@ function RalPalette({ value, onChange }: { value: string; onChange: (value: stri
 function ObjectForm() {
   const s = useProjectStore();
   const region = regionById(s.structural.regionId);
+  const [templateId, setTemplateId] = useState(PROJECT_TEMPLATES[0]?.id ?? "");
   return (
     <section className="object-section">
       <h3>Объект</h3>
+      <Select
+        label="Типовой шаблон"
+        value={templateId}
+        onChange={setTemplateId}
+      >
+        {PROJECT_TEMPLATES.map((template) => (
+          <option key={template.id} value={template.id}>
+            {template.label}
+          </option>
+        ))}
+      </Select>
+      <button
+        type="button"
+        onClick={() => {
+          const template = PROJECT_TEMPLATES.find((item) => item.id === templateId);
+          if (!template) return;
+          s.replaceProject({
+            ...defaultProject,
+            ...template.data,
+            building: { ...defaultProject.building, ...template.data.building },
+            roof: { ...defaultProject.roof, ...template.data.roof },
+            commercial: { ...defaultProject.commercial, ...template.data.commercial },
+            openings: template.data.openings ?? [],
+          });
+        }}
+      >
+        Загрузить шаблон
+      </button>
       <Text
         label="Название объекта"
         value={s.commercial.objectName}
@@ -214,6 +250,7 @@ function StructuralForm() {
   const s = useProjectStore();
   const r = s.calculation.structural;
   const rows: [string, string][] = [
+    ["Стеновой ригель", `${r.wallGirt.profile}, шаг ${r.wallGirt.stepM} м`],
     ["Прогон", `${r.purlin.profile}, шаг ${r.purlin.stepM} м`],
     [
       "Ферма",
@@ -313,6 +350,32 @@ function StructuralForm() {
         max={2.5}
         onChange={(foundationDepth) => s.patchStructural({ foundationDepth })}
       />
+      <Num
+        label="Вынос панелей от каркаса"
+        value={s.structural.panelOffsetMm}
+        unit="мм"
+        step={10}
+        min={0}
+        max={300}
+        onChange={(panelOffsetMm) => s.patchStructural({ panelOffsetMm })}
+      />
+      <Num
+        label="Вентзазор / подсистема"
+        value={s.structural.facadeVentGapMm}
+        unit="мм"
+        step={10}
+        min={0}
+        max={120}
+        onChange={(facadeVentGapMm) => s.patchStructural({ facadeVentGapMm })}
+      />
+      <Num
+        label="Шаг стеновых ригелей"
+        value={s.structural.wallGirtStep}
+        step={0.1}
+        min={0.5}
+        max={3}
+        onChange={(wallGirtStep) => s.patchStructural({ wallGirtStep })}
+      />
       <div className="struct-mini">
         {rows.map(([k, v]) => (
           <div className="struct-mini-row" key={k}>
@@ -332,6 +395,7 @@ function StructuralForm() {
 }
 export function ProjectForms() {
   const s = useProjectStore();
+  const priceFile = useRef<HTMLInputElement>(null);
   return (
     <div className="form-stack">
       <ObjectForm />
@@ -435,6 +499,31 @@ export function ProjectForms() {
       <StructuralForm />
       <section>
         <h3>Расчет и цены</h3>
+        <button type="button" onClick={() => priceFile.current?.click()}>
+          Загрузить прайс Excel
+        </button>
+        <input
+          ref={priceFile}
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          hidden
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const patch = await importPriceSheet(file);
+            s.patchSettings(patch);
+          }}
+        />
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={s.calculationSettings.quickMode}
+            onChange={(e) =>
+              s.patchSettings({ quickMode: e.target.checked })
+            }
+          />
+          Быстрый расчет без детальной раскладки
+        </label>
         <Select
           label="Площадь для цены"
           value={s.calculationSettings.pricingMode}
@@ -454,6 +543,35 @@ export function ProjectForms() {
           unit="%"
           step={1}
           onChange={(n) => s.patchSettings({ reservePercent: n })}
+        />
+        <Num
+          label="Монтажный зазор панели"
+          value={s.calculationSettings.mountingGapMm}
+          unit="мм"
+          step={1}
+          min={0}
+          max={50}
+          onChange={(mountingGapMm) => s.patchSettings({ mountingGapMm })}
+        />
+        <Num
+          label="Температурный зазор"
+          value={s.calculationSettings.thermalGapMm}
+          unit="мм"
+          step={1}
+          min={0}
+          max={20}
+          onChange={(thermalGapMm) => s.patchSettings({ thermalGapMm })}
+        />
+        <Num
+          label="Добор вокруг проемов"
+          value={s.calculationSettings.openingClearanceMm}
+          unit="мм"
+          step={5}
+          min={0}
+          max={100}
+          onChange={(openingClearanceMm) =>
+            s.patchSettings({ openingClearanceMm })
+          }
         />
         <Num
           label="Цена стен, сом/м²"
@@ -509,6 +627,43 @@ export function ProjectForms() {
           step={10}
           min={0}
           onChange={(n) => s.patchSettings({ transportRatePerKm: n })}
+        />
+        <Num
+          label="Автокран, смен"
+          value={s.calculationSettings.craneShifts}
+          unit=""
+          step={1}
+          min={0}
+          onChange={(craneShifts) => s.patchSettings({ craneShifts })}
+        />
+        <Num
+          label="Автокран, сом/смена"
+          value={s.calculationSettings.craneShiftPrice}
+          unit=""
+          step={1000}
+          min={0}
+          onChange={(craneShiftPrice) => s.patchSettings({ craneShiftPrice })}
+        />
+        <Num
+          label="Леса / подмости, сом/м²"
+          value={s.calculationSettings.scaffoldPricePerM2}
+          unit=""
+          step={10}
+          min={0}
+          onChange={(scaffoldPricePerM2) =>
+            s.patchSettings({ scaffoldPricePerM2 })
+          }
+        />
+        <Num
+          label="Погодный резерв"
+          value={s.calculationSettings.weatherRiskPercent}
+          unit="%"
+          step={1}
+          min={0}
+          max={30}
+          onChange={(weatherRiskPercent) =>
+            s.patchSettings({ weatherRiskPercent })
+          }
         />
         <label className="check">
           <input
@@ -666,6 +821,26 @@ function PanelForm({
   return (
     <section>
       <h3>{title}</h3>
+      <Select
+        label="Серия панели"
+        value={p.series}
+        onChange={(series) =>
+          patch({
+            ...panelSeriesDefaults(series as typeof p.series),
+            series: series as typeof p.series,
+          })
+        }
+      >
+        {PANEL_SERIES_OPTIONS.filter((option) =>
+          kind === "roofPanelSystem"
+            ? option.value === "roof-tsp"
+            : option.value !== "roof-tsp",
+        ).map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
       <Num
         label="Толщина панели"
         value={p.thickness}
@@ -688,9 +863,10 @@ function PanelForm({
       </Select>
       <RalPalette value={p.ralColor} onChange={(ralColor) => patch({ ralColor })} />
       <small className="field-hint">
-        {kind === "wallPanelSystem"
-          ? "Горизонтальная раскладка, ширина 1000 мм"
-          : "Вертикальная раскладка, длина рассчитывается по скату"}
+        Серия: {
+          PANEL_SERIES_OPTIONS.find((option) => option.value === p.series)?.note ??
+          "типовая серия"
+        }
       </small>
     </section>
   );

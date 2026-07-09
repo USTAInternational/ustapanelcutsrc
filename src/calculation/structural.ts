@@ -245,6 +245,7 @@ export interface StructuralResult {
   snowDistrict: string;
   windDistrict: string;
   loads: StructuralLoads;
+  wallGirt: PurlinResult;
   purlin: PurlinResult;
   truss: TrussResult;
   column: ColumnResult;
@@ -332,6 +333,63 @@ function selectPurlin(
     count,
     totalLengthM: count * spanM,
     totalMassKg: count * spanM * fallback.massKgM,
+  };
+}
+
+function selectWallGirt(
+  loadKgM2: number,
+  spanM: number,
+  wallHeightM: number,
+  perimeterM: number,
+  baysCount: number,
+  stepMm: number,
+): PurlinResult {
+  const stepM = Math.max(0.5, stepMm / 1000);
+  let best: PurlinResult | undefined;
+  for (const profile of PURLIN_PROFILES) {
+    const qKgM = loadKgM2 * stepM + profile.massKgM;
+    const { stressUsage, deflectionUsage } = checkPurlin(profile, qKgM, spanM);
+    if (stressUsage > 0.95 || deflectionUsage > 1) continue;
+    const linesPerSlope = Math.max(2, Math.floor(wallHeightM / stepM) + 1);
+    const count = linesPerSlope * (2 * baysCount + 2);
+    const totalLengthM = linesPerSlope * perimeterM;
+    const candidate: PurlinResult = {
+      ok: true,
+      manual: true,
+      profile: profile.name,
+      stepM,
+      spanM,
+      loadKgM: qKgM,
+      stressUsage,
+      deflectionUsage,
+      linesPerSlope,
+      slopes: 4,
+      count,
+      totalLengthM,
+      totalMassKg: totalLengthM * profile.massKgM,
+    };
+    if (!best || candidate.totalMassKg < best.totalMassKg) best = candidate;
+  }
+  if (best) return best;
+  const fallback = PURLIN_PROFILES[PURLIN_PROFILES.length - 1];
+  const qKgM = loadKgM2 * stepM + fallback.massKgM;
+  const { stressUsage, deflectionUsage } = checkPurlin(fallback, qKgM, spanM);
+  const linesPerSlope = Math.max(2, Math.floor(wallHeightM / stepM) + 1);
+  const totalLengthM = linesPerSlope * perimeterM;
+  return {
+    ok: false,
+    manual: true,
+    profile: fallback.name,
+    stepM,
+    spanM,
+    loadKgM: qKgM,
+    stressUsage,
+    deflectionUsage,
+    linesPerSlope,
+    slopes: 4,
+    count: linesPerSlope * (2 * baysCount + 2),
+    totalLengthM,
+    totalMassKg: totalLengthM * fallback.massKgM,
   };
 }
 
@@ -562,6 +620,20 @@ export function calculateStructural(
       : roof.type === "mono"
         ? Math.hypot(widthM, rise)
         : widthM;
+  const perimeterM = 2 * (lengthM + widthM);
+  const wallLoadKgM2 = panelWeightKgM2(wallThicknessMm) + loads.windKgM2 * 0.85;
+  const wallGirt = selectWallGirt(
+    wallLoadKgM2,
+    columnStepM,
+    wallM,
+    perimeterM,
+    baysCount,
+    structural.wallGirtStep,
+  );
+  if (!wallGirt.ok)
+    warnings.push(
+      `Стеновые ригели: профиль ${wallGirt.profile} не проходит по шагу ${wallGirt.stepM.toFixed(2)} м`,
+    );
 
   // Шаг 1. Прогоны: пролёт равен шагу ферм, идут вдоль здания
   const purlin = selectPurlin(
@@ -633,7 +705,7 @@ export function calculateStructural(
     wallLineKnM,
     soil,
     Math.min(2.5, Math.max(0.8, structural.foundationDepth / 1000)),
-    2 * (lengthM + widthM),
+    perimeterM,
     column.count,
   );
   if (region.soil.includes("просадочные") && structural.soilId === "auto")
@@ -642,6 +714,7 @@ export function calculateStructural(
     );
 
   const totalSteelKg =
+    wallGirt.totalMassKg +
     purlin.totalMassKg +
     truss.massPerTrussKg * truss.count +
     column.count * wallM * column.massKgM;
@@ -651,6 +724,7 @@ export function calculateStructural(
     snowDistrict: region.snowDistrict,
     windDistrict: region.windDistrict,
     loads,
+    wallGirt,
     purlin,
     truss,
     column,

@@ -3,6 +3,7 @@ import type { ProjectCalculation, ProjectInput } from "../domain/types";
 import { insulationLabel } from "../domain/panelOptions";
 import { ralHex } from "../domain/ral";
 import { buildSurfaceSvg, svgToPngDataUrl } from "./drawingSvg";
+import { buildNodeSheets } from "./nodeSheets";
 import { resolveRoof } from "../geometry/surfaces";
 const download = (name: string, blob: Blob) => {
   const a = document.createElement("a");
@@ -380,6 +381,14 @@ export async function exportPdf(
     doc.addPage("a4", "landscape");
     doc.addImage(pageImg, "JPEG", 0, 0, 297, 210);
     sheet++;
+  }
+  const nodeSheets = await buildNodeSheets(input, calc, {
+    object: c.objectName,
+    date: today,
+  });
+  for (const nodeSheet of nodeSheets) {
+    doc.addPage("a4", "landscape");
+    doc.addImage(nodeSheet, "JPEG", 0, 0, 297, 210);
   }
   doc.save("коммерческое-предложение.pdf");
 }

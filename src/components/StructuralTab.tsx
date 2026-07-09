@@ -61,6 +61,26 @@ export function StructuralTab() {
         </div>
       </div>
       <div className="struct-cascade">
+        <section className={`struct-card ${r.wallGirt.ok ? "" : "struct-bad"}`}>
+          <header>
+            <span className="struct-step">0</span>
+            <h3>Стеновой ригель</h3>
+            <Usage value={r.wallGirt.stressUsage} />
+          </header>
+          <Row k="Профиль" v={r.wallGirt.profile} />
+          <Row k="Шаг ригелей" v={`${n1(r.wallGirt.stepM)} м`} />
+          <Row k="Пролёт" v={`${n1(r.wallGirt.spanM)} м`} />
+          <Row k="Нагрузка" v={`${n0(r.wallGirt.loadKgM)} кг/м`} />
+          <Row
+            k="Прогиб"
+            v={`${pct(r.wallGirt.deflectionUsage)} от предела l/200`}
+          />
+          <Row
+            k="Количество"
+            v={`${r.wallGirt.count} шт · ${n0(r.wallGirt.totalLengthM)} пог.м`}
+          />
+          <Row k="Масса" v={`${n0(r.wallGirt.totalMassKg)} кг`} />
+        </section>
         <section className={`struct-card ${r.purlin.ok ? "" : "struct-bad"}`}>
           <header>
             <span className="struct-step">1</span>

@@ -5,6 +5,7 @@ import {
   BufferGeometry,
   DoubleSide,
   EdgesGeometry,
+  Float32BufferAttribute,
   Quaternion,
   Vector3,
 } from "three";
@@ -16,6 +17,53 @@ import { useProjectStore } from "../store/projectStore";
 type WorldPoint = [number, number, number];
 type Mapper = (point: Point2D) => WorldPoint;
 const toMeters = (value: number) => value / 1000;
+
+function pointOnNormal(point: WorldPoint, normal: Vector3, offset: number): WorldPoint {
+  return [
+    point[0] + normal.x * offset,
+    point[1] + normal.y * offset,
+    point[2] + normal.z * offset,
+  ];
+}
+
+function mapperNormal(mapper: Mapper): Vector3 {
+  const p0 = new Vector3(...mapper({ x: 0, y: 0 }));
+  const px = new Vector3(...mapper({ x: 1000, y: 0 }));
+  const py = new Vector3(...mapper({ x: 0, y: 1000 }));
+  return px.sub(p0).cross(py.sub(p0)).normalize();
+}
+
+function extrudedGeometry(
+  polygon: Point2D[],
+  mapper: Mapper,
+  normal: Vector3,
+  innerOffset: number,
+  thickness: number,
+) {
+  const front = polygon.map((point) =>
+    pointOnNormal(mapper(point), normal, innerOffset),
+  );
+  const back = polygon.map((point) =>
+    pointOnNormal(mapper(point), normal, innerOffset + thickness),
+  );
+  const positions: number[] = [];
+  const pushTriangle = (a: WorldPoint, b: WorldPoint, c: WorldPoint) => {
+    positions.push(...a, ...b, ...c);
+  };
+  for (let index = 1; index < front.length - 1; index++) {
+    pushTriangle(front[0], front[index], front[index + 1]);
+    pushTriangle(back[0], back[index + 1], back[index]);
+  }
+  for (let index = 0; index < front.length; index++) {
+    const next = (index + 1) % front.length;
+    pushTriangle(front[index], front[next], back[next]);
+    pushTriangle(front[index], back[next], back[index]);
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
 
 function SurfaceMesh({ surface, mapper, selected, color }: { surface: Surface; mapper: Mapper; selected: boolean; color: string }) {
   const geometry = useMemo(() => {
@@ -36,9 +84,9 @@ function SurfaceMesh({ surface, mapper, selected, color }: { surface: Surface; m
           emissive={selected ? "#2169a1" : "#000000"}
           emissiveIntensity={selected ? 0.28 : 0}
           side={DoubleSide}
-          roughness={0.8}
-          transparent={false}
-          opacity={1}
+          roughness={0.92}
+          transparent
+          opacity={0.18}
           depthWrite
           depthTest
         />
@@ -50,29 +98,44 @@ function SurfaceMesh({ surface, mapper, selected, color }: { surface: Surface; m
   );
 }
 
-function PanelOverlay({ panel, mapper, selected, onSelect }: { panel: PanelPiece; mapper: Mapper; selected: boolean; onSelect: (id: string) => void }) {
+function PanelSolid({
+  panel,
+  mapper,
+  normal,
+  selected,
+  onSelect,
+  color,
+  innerOffset,
+  thickness,
+}: {
+  panel: PanelPiece;
+  mapper: Mapper;
+  normal: Vector3;
+  selected: boolean;
+  onSelect: (id: string) => void;
+  color: string;
+  innerOffset: number;
+  thickness: number;
+}) {
   const geometry = useMemo(() => {
-    const vertices = panel.polygon.map((point) => new Vector3(...mapper(point)));
-    const result = new BufferGeometry().setFromPoints(vertices);
-    const indices: number[] = [];
-    for (let index = 1; index < vertices.length - 1; index++)
-      indices.push(0, index, index + 1);
-    result.setIndex(indices);
-    return result;
-  }, [panel, mapper]);
-  const points = [...panel.polygon, panel.polygon[0]].map(mapper);
+    return extrudedGeometry(panel.polygon, mapper, normal, innerOffset, thickness);
+  }, [innerOffset, mapper, normal, panel, thickness]);
+  const points = [...panel.polygon, panel.polygon[0]].map((point) =>
+    pointOnNormal(mapper(point), normal, innerOffset + thickness),
+  );
   const choose = (event: { stopPropagation: () => void }) => {
     event.stopPropagation();
     onSelect(panel.id);
   };
   return (
     <group>
-      <mesh geometry={geometry} onClick={choose}>
-        <meshBasicMaterial
-          transparent
-          opacity={0}
-          depthWrite={false}
-          colorWrite={false}
+      <mesh geometry={geometry} onClick={choose} renderOrder={2}>
+        <meshStandardMaterial
+          color={color}
+          roughness={0.68}
+          metalness={0.08}
+          emissive={selected ? "#205b8a" : "#000000"}
+          emissiveIntensity={selected ? 0.22 : 0}
           side={DoubleSide}
         />
       </mesh>
@@ -90,18 +153,53 @@ function PanelOverlay({ panel, mapper, selected, onSelect }: { panel: PanelPiece
 }
 
 function PanelContours({ panels, mapper, selectedPanelId, onSelect }: { panels: PanelPiece[]; mapper: Mapper; selectedPanelId?: string; onSelect: (id: string) => void }) {
+  return null;
+}
+
+function PanelSolids({
+  panels,
+  mapper,
+  selectedPanelId,
+  onSelect,
+  color,
+  innerOffset,
+  thickness,
+}: {
+  panels: PanelPiece[];
+  mapper: Mapper;
+  selectedPanelId?: string;
+  onSelect: (id: string) => void;
+  color: string;
+  innerOffset: number;
+  thickness: number;
+}) {
+  const normal = useMemo(() => mapperNormal(mapper), [mapper]);
   return panels.map((panel) => (
-    <PanelOverlay
+    <PanelSolid
       key={panel.id}
       panel={panel}
       mapper={mapper}
+      normal={normal}
       selected={panel.id === selectedPanelId}
       onSelect={onSelect}
+      color={color}
+      innerOffset={innerOffset}
+      thickness={thickness}
     />
   ));
 }
 
-function OpeningMesh({ opening, mapper }: { opening: Opening; mapper: Mapper }) {
+function OpeningMesh({
+  opening,
+  mapper,
+  normal,
+  offset,
+}: {
+  opening: Opening;
+  mapper: Mapper;
+  normal: Vector3;
+  offset: number;
+}) {
   const corners: Point2D[] = [
     { x: opening.x, y: opening.y },
     { x: opening.x + opening.width, y: opening.y },
@@ -109,14 +207,18 @@ function OpeningMesh({ opening, mapper }: { opening: Opening; mapper: Mapper }) 
     { x: opening.x, y: opening.y + opening.height },
   ];
   const geometry = useMemo(() => {
-    const vertices = corners.map((point) => new Vector3(...mapper(point)));
+    const vertices = corners.map((point) =>
+      new Vector3(...pointOnNormal(mapper(point), normal, offset)),
+    );
     const result = new BufferGeometry().setFromPoints(vertices);
     result.setIndex([0, 1, 2, 0, 2, 3]);
     result.computeVertexNormals();
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opening, mapper]);
-  const outline = [...corners, corners[0]].map(mapper);
+  }, [normal, offset, opening, mapper]);
+  const outline = [...corners, corners[0]].map((point) =>
+    pointOnNormal(mapper(point), normal, offset),
+  );
   return (
     <group>
       <mesh geometry={geometry} renderOrder={2}>
@@ -250,6 +352,15 @@ function Frame() {
   const frames = Array.from({ length: bays + 1 }, (_, i) => -length / 2 + (i * length) / bays);
   const half = width / 2;
   const columnSize = 0.22;
+  const wallGirtLevels = Array.from(
+    {
+      length: Math.max(
+        1,
+        Math.floor(wallHeight / Math.max(0.4, result.wallGirt.stepM)),
+      ),
+    },
+    (_, index) => result.wallGirt.stepM * (index + 1),
+  ).filter((level) => level < wallHeight - 0.15);
   // Прогоны вдоль здания по скатам с шагом из подбора
   const purlins: { y: number; z: number }[] = [];
   if (roof.type === "gable" && ridgeRise > 0.01) {
@@ -322,6 +433,34 @@ function Frame() {
           color={STEEL_DARK}
         />
       ))}
+      {wallGirtLevels.map((y, i) => (
+        <group key={`girt-${i}`}>
+          <Member
+            a={[-length / 2, y, -half]}
+            b={[length / 2, y, -half]}
+            size={0.06}
+            color={STEEL_DARK}
+          />
+          <Member
+            a={[-length / 2, y, half]}
+            b={[length / 2, y, half]}
+            size={0.06}
+            color={STEEL_DARK}
+          />
+          <Member
+            a={[-length / 2, y, -half]}
+            b={[-length / 2, y, half]}
+            size={0.06}
+            color={STEEL_DARK}
+          />
+          <Member
+            a={[length / 2, y, -half]}
+            b={[length / 2, y, half]}
+            size={0.06}
+            color={STEEL_DARK}
+          />
+        </group>
+      ))}
       {structural.foundationType === "strip" && (
         <group>
           {/* Лента по периметру: видимый цоколь + заглублённая часть */}
@@ -348,7 +487,7 @@ function Frame() {
 }
 
 function Model() {
-  const { building, roof: rawRoof, calculation, selectedSurfaceId, selectedPanelId, wallPanelSystem, roofPanelSystem, openings } = useProjectStore();
+  const { building, roof: rawRoof, calculation, selectedSurfaceId, selectedPanelId, wallPanelSystem, roofPanelSystem, openings, structural } = useProjectStore();
   const roof = resolveRoof(building, rawRoof);
   const length = toMeters(building.length);
   const width = toMeters(building.width);
@@ -412,23 +551,46 @@ function Model() {
     <group>
       {calculation.surfaces.map((surface) => {
         const mapper = mapperFor(surface.id);
+        const normal = mapperNormal(mapper);
+        const system =
+          surface.type === "roof" ? roofPanelSystem : wallPanelSystem;
+        const panelThickness = toMeters(system.thickness);
+        const innerOffset = toMeters(
+          structural.panelOffsetMm +
+            (surface.type === "roof" ? 0 : structural.facadeVentGapMm),
+        );
+        const color = ralHex(
+          surface.type === "roof"
+            ? roofPanelSystem.ralColor
+            : wallPanelSystem.ralColor,
+        );
         return (
           <group key={surface.id}>
             <SurfaceMesh
               surface={surface}
               mapper={mapper}
               selected={surface.id === selectedSurfaceId}
-              color={ralHex(
-                surface.type === "roof"
-                  ? roofPanelSystem.ralColor
-                  : wallPanelSystem.ralColor,
-              )}
+              color={color}
             />
-            <PanelContours panels={calculation.panels.filter((panel) => panel.surfaceId === surface.id)} mapper={mapper} selectedPanelId={selectedPanelId} onSelect={selectIn3D} />
+            <PanelSolids
+              panels={calculation.panels.filter((panel) => panel.surfaceId === surface.id)}
+              mapper={mapper}
+              selectedPanelId={selectedPanelId}
+              onSelect={selectIn3D}
+              color={color}
+              innerOffset={innerOffset}
+              thickness={panelThickness}
+            />
             {openings
               .filter((o) => o.surfaceId === surface.id)
               .map((o) => (
-                <OpeningMesh key={o.id} opening={o} mapper={mapper} />
+                <OpeningMesh
+                  key={o.id}
+                  opening={o}
+                  mapper={mapper}
+                  normal={normal}
+                  offset={innerOffset + panelThickness / 2}
+                />
               ))}
           </group>
         );

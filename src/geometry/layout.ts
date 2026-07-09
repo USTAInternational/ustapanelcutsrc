@@ -1,4 +1,5 @@
 import type {
+  CalculationSettings,
   LayoutAlignment,
   PanelPiece,
   PanelSystem,
@@ -101,10 +102,21 @@ function cutAngle(poly: Point2D[]) {
 export function layoutPanelsOnSurface(
   surface: Surface,
   sys: PanelSystem,
+  settings?: Pick<
+    CalculationSettings,
+    "mountingGapMm" | "thermalGapMm" | "quickMode"
+  >,
 ): PanelPiece[] {
+  if (settings?.quickMode)
+    return [];
   const vertical = sys.layoutDirection === "vertical",
     size = vertical ? surface.width : surface.height,
-    w = sys.effectiveWidth,
+    w = Math.max(
+      100,
+      sys.effectiveWidth -
+        (settings?.mountingGapMm ?? 0) -
+        (settings?.thermalGapMm ?? 0),
+    ),
     offset = calculateLayoutOffset(size, w, sys.alignment, sys.manualOffset);
   const start = Math.floor((0 - offset) / w) - 1,
     end = Math.ceil((size - offset) / w) + 1,
