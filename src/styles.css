@@ -7,3 +7,101 @@
 .opening-diag{stroke:#cc542a;stroke-width:6;vector-effect:non-scaling-stroke;opacity:.55}
 
 .roof-hint{display:block;margin:2px 0 10px;padding:7px 9px;background:#eaf2fb;border:1px solid #cddcf0;border-radius:5px;color:#2c5788}
+
+/* ===== Тема USTA BIM (ustabim.online): графит + оранжевый акцент ===== */
+:root{--usta-dark:#101828;--usta-dark-2:#182233;--usta-accent:#f97316;--usta-accent-2:#ea580c;--usta-line:#2a3648;--blue:var(--usta-accent);background:#eef1f6}
+button.primary,.primary{background:var(--usta-accent);border-color:var(--usta-accent)}
+button.primary:hover,.primary:hover{background:var(--usta-accent-2);border-color:var(--usta-accent-2)}
+header{background:linear-gradient(90deg,var(--usta-dark),var(--usta-dark-2))}
+.logo{background:var(--usta-accent);color:#fff;border:0;border-radius:9px;font-size:17px}
+.brand small{color:#94a3b8;font-size:10px}
+.header-actions button{background:#1f2b3f;border-color:#334155;border-radius:8px}
+.header-actions button:hover{border-color:var(--usta-accent);color:#fff}
+.header-actions .primary{background:var(--usta-accent);border-color:var(--usta-accent)}
+.tabs{background:#e2e7ee}
+.tabs button.active{color:var(--usta-accent-2);box-shadow:inset 0 2px 0 var(--usta-accent)}
+.table-controls .active{background:var(--usta-accent);border-color:var(--usta-accent)}
+.properties>strong{color:var(--usta-accent-2)}
+h3{color:#334155}
+.field input:focus,.field select:focus{outline:2px solid #fdba74;border-color:var(--usta-accent)}
+.object-section{background:linear-gradient(180deg,#fff7ed,transparent);border-left:3px solid var(--usta-accent)}
+.region-hint{display:block;margin:-2px 0 10px;padding:7px 9px;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;color:#9a3412;line-height:1.4}
+
+/* Шапка: чип пользователя (личный кабинет) */
+.user-chip{display:flex;align-items:center;gap:8px;background:#1f2b3f;border:1px solid #334155;border-radius:999px;padding:4px 12px 4px 4px;color:#e2e8f0;max-width:190px}
+.user-chip:hover{border-color:var(--usta-accent)}
+.user-chip img,.user-avatar{width:26px;height:26px;border-radius:50%;flex:none}
+.user-avatar{display:grid;place-items:center;background:var(--usta-accent);color:#fff;font-weight:700;font-size:13px}
+.user-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+
+/* Страница входа */
+.login-screen{min-height:100vh;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}
+.login-hero{background:radial-gradient(1100px 700px at -10% -20%,#24344d 0%,var(--usta-dark) 55%) ,var(--usta-dark);color:#e2e8f0;padding:56px 64px;display:flex;flex-direction:column;gap:22px;justify-content:center}
+.login-hero-brand{display:flex;align-items:center;gap:12px}
+.login-hero-brand strong{font-size:18px;letter-spacing:.04em}
+.login-hero-brand small{display:block;color:#94a3b8}
+.login-hero h1{margin:0;font-size:clamp(26px,3.4vw,40px);line-height:1.15;font-weight:800}
+.login-hero p{margin:0;color:#aebacd;max-width:52ch;line-height:1.6}
+.login-hero ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
+.login-hero li{padding-left:26px;position:relative;color:#cbd5e1}
+.login-hero li::before{content:"";position:absolute;left:0;top:5px;width:14px;height:14px;border-radius:4px;background:var(--usta-accent)}
+.login-hero-note{color:#7d8aa0}
+.login-card-wrap{display:grid;place-items:center;padding:32px;background:#eef1f6}
+.login-card{width:min(400px,100%);background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:32px;box-shadow:0 24px 60px #10182814;display:flex;flex-direction:column;gap:6px}
+.login-card h2{margin:0 0 2px;font-size:22px}
+.login-sub{margin:0 0 14px;color:#64748b;font-size:13px;line-height:1.55}
+.google-signin{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:11px;margin-top:10px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;font-weight:600;font-size:14px}
+.google-signin:hover{border-color:var(--usta-accent);background:#fff7ed}
+.login-note{margin-top:14px;color:#94a3b8;line-height:1.5}
+.login-note code{background:#f1f5f9;padding:1px 5px;border-radius:4px}
+.google-button-host{display:flex;justify-content:center;margin:10px 0}
+@media(max-width:860px){.login-screen{grid-template-columns:1fr}.login-hero{padding:40px 28px;min-height:38vh}}
+
+/* Личный кабинет */
+.profile-overlay{position:fixed;inset:0;z-index:50;background:#10182899;backdrop-filter:blur(3px);display:grid;place-items:center;padding:20px}
+.profile-card{width:min(440px,100%);background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 30px 80px #10182855}
+.profile-card>header{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background:var(--usta-dark);color:#fff}
+.profile-identity{display:flex;align-items:center;gap:11px}
+.profile-identity img,.profile-avatar{width:38px;height:38px;border-radius:50%}
+.profile-avatar{display:grid;place-items:center;background:var(--usta-accent);color:#fff;font-weight:800;font-size:17px}
+.profile-identity small{display:block;color:#94a3b8;margin-top:2px}
+.profile-card>header button{width:30px;height:30px;padding:0;background:#1f2b3f;border-color:#334155;color:#fff;font-size:18px;border-radius:8px}
+.profile-body{padding:16px 18px 6px}
+.profile-hint{font-size:11px;color:#94a3b8;line-height:1.5;margin:10px 0 8px}
+.profile-card>footer{display:flex;justify-content:space-between;gap:10px;padding:12px 18px 18px}
+.profile-card .ghost{border-color:#e2e8f0;color:#64748b}
+.profile-card .ghost:hover{border-color:#f87171;color:#dc2626}
+
+/* Блок Менеджер (в формах) */
+.manager-card{background:#f8fafc}
+.manager-info{display:flex;flex-direction:column;gap:8px}
+.manager-info span{display:block;font-size:11px;color:#64748b}
+.manager-info strong{font-size:12.5px;color:#1e293b}
+
+/* Конструкции: мини-результаты в форме */
+.struct-mini{margin:12px 0 4px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}
+.struct-mini-row{display:flex;justify-content:space-between;gap:10px;padding:7px 10px;font-size:11.5px;border-bottom:1px solid #eef2f6;background:#fff}
+.struct-mini-row:last-child{border-bottom:0}
+.struct-mini-row span{color:#64748b}
+.struct-mini-row strong{text-align:right;color:#1e293b}
+
+/* Вкладка Конструкции */
+.structural-page .struct-intro h2{margin:0 0 6px;font-size:20px}
+.structural-page .struct-intro p{margin:0 0 18px;color:#475569;max-width:90ch;line-height:1.6}
+.struct-loads .summary-card strong{color:#0f172a}
+.struct-cascade{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin:6px 0 20px}
+.struct-card{border:1px solid #e2e8f0;border-radius:12px;background:#fff;padding:14px 16px;display:flex;flex-direction:column;gap:2px;box-shadow:0 4px 16px #10182808}
+.struct-card>header{display:flex;align-items:center;gap:10px;margin-bottom:8px;border-bottom:1px solid #eef2f6;padding-bottom:10px}
+.struct-card>header h3{margin:0;flex:1;text-transform:none;letter-spacing:0;font-size:15px;color:#0f172a}
+.struct-step{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;background:var(--usta-accent);color:#fff;font-weight:800;font-size:13px;flex:none}
+.struct-card>footer{margin-top:10px;padding-top:8px;border-top:1px dashed #e2e8f0;font-size:10.5px;color:#94a3b8}
+.struct-row{display:flex;justify-content:space-between;gap:12px;font-size:12px;padding:4px 0}
+.struct-row span{color:#64748b}
+.struct-row strong{text-align:right;color:#1e293b}
+.struct-bad{border-color:#fca5a5;background:#fff7f7}
+.usage{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px}
+.usage-ok{background:#dcfce7;color:#15803d}
+.usage-warn{background:#fef9c3;color:#a16207}
+.usage-bad{background:#fee2e2;color:#b91c1c}
+/* Градиент шапки не должен красить header внутри карточек */
+.struct-card>header{background:none;color:inherit}

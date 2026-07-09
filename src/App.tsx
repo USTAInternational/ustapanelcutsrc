@@ -1,8 +1,12 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { managerFields, ROLE_LABELS, useAuthStore } from "./auth/authStore";
 import { Building3D } from "./components/Building3D";
 import { CombinedUnfolding } from "./components/CombinedUnfolding";
 import { ProjectForms } from "./components/Forms";
+import { LoginPage } from "./components/LoginPage";
+import { ProfileDialog } from "./components/ProfileDialog";
 import { Specification } from "./components/Specification";
+import { StructuralTab } from "./components/StructuralTab";
 import { Summary } from "./components/Summary";
 import { SurfaceDrawing } from "./components/SurfaceDrawing";
 import type { ProjectInput, SavedProject } from "./domain/types";
@@ -19,9 +23,11 @@ import { useProjectStore } from "./store/projectStore";
 import { projectSchema } from "./validation/projectSchema";
 
 export default function App() {
+  const user = useAuthStore((v) => v.user);
   const s = useProjectStore(),
     [left, setLeft] = useState(true),
     [right, setRight] = useState(true),
+    [profileOpen, setProfileOpen] = useState(false),
     file = useRef<HTMLInputElement>(null),
     surface = s.calculation.surfaces.find((v) => v.id === s.activeTab),
     panel = s.calculation.panels.find((v) => v.id === s.selectedPanelId),
@@ -33,7 +39,13 @@ export default function App() {
       openings: s.openings,
       calculationSettings: s.calculationSettings,
       commercial: s.commercial,
+      structural: s.structural,
     };
+  // Блок «Менеджер» заполняется из личного кабинета один раз при входе
+  const patchCommercial = useProjectStore((v) => v.patchCommercial);
+  useEffect(() => {
+    if (user) patchCommercial(managerFields(user));
+  }, [user, patchCommercial]);
   const importFile = async (f: File) => {
     try {
       const raw = JSON.parse(await f.text()) as SavedProject;
@@ -47,13 +59,15 @@ export default function App() {
       );
     }
   };
+  if (!user) return <LoginPage />;
   return (
     <div className="app">
       <header>
         <div className="brand">
-          <span className="logo">SP</span>
+          <span className="logo">U</span>
           <div>
-            <strong>Раскладка панелей</strong>
+            <strong>USTA BIM</strong>
+            <small>Раскладка панелей · Конструкции</small>
           </div>
         </div>
         <div className="header-actions">
@@ -89,8 +103,24 @@ export default function App() {
           </button>
           <button onClick={() => s.reset()}>Новый</button>
           <button onClick={() => setRight((v) => !v)}>Свойства</button>
+          <button
+            type="button"
+            className="user-chip"
+            title={`${user.email} · ${ROLE_LABELS[user.role]}`}
+            onClick={() => setProfileOpen(true)}
+          >
+            {user.picture ? (
+              <img src={user.picture} alt="" />
+            ) : (
+              <span className="user-avatar">
+                {(user.fullName || user.email)[0]?.toUpperCase()}
+              </span>
+            )}
+            <span className="user-name">{user.fullName || user.email}</span>
+          </button>
         </div>
       </header>
+      {profileOpen && <ProfileDialog onClose={() => setProfileOpen(false)} />}
       <main className={`${left ? "" : "left-off"} ${right ? "" : "right-off"}`}>
         <aside className="left-panel">
           <ProjectForms />
@@ -118,6 +148,12 @@ export default function App() {
                 {v.name}
               </button>
             ))}
+            <button
+              className={s.activeTab === "structural" ? "active" : ""}
+              onClick={() => s.setTab("structural")}
+            >
+              Конструкции
+            </button>
             <button
               className={s.activeTab === "spec" ? "active" : ""}
               onClick={() => s.setTab("spec")}
@@ -147,6 +183,7 @@ export default function App() {
                 )}
               />
             )}{" "}
+            {s.activeTab === "structural" && <StructuralTab />}
             {s.activeTab === "spec" && <Specification />}
             {s.activeTab === "summary" && <Summary />}
           </div>

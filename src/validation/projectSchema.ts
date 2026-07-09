@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { RAL_COLORS } from "../domain/ral";
-import { defaultCommercial } from "../domain/defaultProject";
+import {
+  defaultCommercial,
+  defaultStructural,
+} from "../domain/defaultProject";
+import { KG_REGIONS } from "../domain/regions";
 const finitePositive = z.number().finite().positive(),
   nonnegative = z.number().finite().nonnegative();
 const commercialSchema = z
@@ -15,6 +19,17 @@ const commercialSchema = z
     factoryAddress: z.string().default(""),
   })
   .default(defaultCommercial);
+const structuralSchema = z
+  .object({
+    regionId: z
+      .string()
+      .refine((id) => KG_REGIONS.some((r) => r.id === id), "Неизвестный регион")
+      .default(defaultStructural.regionId),
+    columnStep: finitePositive.default(defaultStructural.columnStep),
+    soilId: z.string().default("auto"),
+    foundationDepth: finitePositive.default(defaultStructural.foundationDepth),
+  })
+  .default(defaultStructural);
 const panel = z
   .object({
     thickness: finitePositive,
@@ -99,6 +114,7 @@ export const projectSchema = z
       transportRatePerKm: nonnegative.default(0),
     }),
     commercial: commercialSchema,
+    structural: structuralSchema,
   })
   .superRefine((v, c) => {
     if (

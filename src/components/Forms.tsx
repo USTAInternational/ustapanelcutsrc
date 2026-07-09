@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { SOIL_TYPES } from "../calculation/structural";
 import { INSULATION_OPTIONS } from "../domain/panelOptions";
 import { RAL_COLORS } from "../domain/ral";
+import { KG_REGIONS, regionById } from "../domain/regions";
 import type { Opening } from "../domain/types";
 import { resolveRoof } from "../geometry/surfaces";
 import { useProjectStore } from "../store/projectStore";
@@ -151,10 +153,123 @@ function RalPalette({ value, onChange }: { value: string; onChange: (value: stri
     </div>
   );
 }
+// Паспорт объекта заполняется в самом начале: геометка (регион) сразу
+// определяет снеговую и ветровую нагрузки и транспортное плечо доставки.
+function ObjectForm() {
+  const s = useProjectStore();
+  const region = regionById(s.structural.regionId);
+  return (
+    <section className="object-section">
+      <h3>Объект</h3>
+      <Text
+        label="Название объекта"
+        value={s.commercial.objectName}
+        placeholder="Напр.: Ангар 24×48 м"
+        onChange={(objectName) => s.patchCommercial({ objectName })}
+      />
+      <Select
+        label="Регион (локация)"
+        value={s.structural.regionId}
+        onChange={(regionId) => s.setRegion(regionId)}
+      >
+        {KG_REGIONS.map((r) => (
+          <option key={r.id} value={r.id}>
+            {r.name}
+          </option>
+        ))}
+      </Select>
+      <small className="field-hint region-hint">
+        Снег {region.snowDistrict} район · Sg {region.snowLoadKpa} кПа · ветер{" "}
+        {region.windDistrict} район · доставка ~{region.transportKm} км
+      </small>
+      <Text
+        label="Адрес объекта"
+        value={s.commercial.objectAddress}
+        placeholder="Город, улица, ориентир"
+        onChange={(objectAddress) => s.patchCommercial({ objectAddress })}
+      />
+      <Text
+        label="Заказчик"
+        value={s.commercial.customer}
+        placeholder="ФИО или ОсОО"
+        onChange={(customer) => s.patchCommercial({ customer })}
+      />
+      <Text
+        label="Контакт"
+        value={s.commercial.contact}
+        placeholder="+996 ..."
+        onChange={(contact) => s.patchCommercial({ contact })}
+      />
+    </section>
+  );
+}
+// Лист «2. Конструкции»: входы каскада и краткий результат подбора.
+function StructuralForm() {
+  const s = useProjectStore();
+  const r = s.calculation.structural;
+  const rows: [string, string][] = [
+    ["Прогон", `${r.purlin.profile}, шаг ${r.purlin.stepM} м`],
+    [
+      "Ферма",
+      `H ${r.truss.heightM.toFixed(2)} м, пояс ${r.truss.topChord}`,
+    ],
+    ["Колонна", r.column.iBeam],
+    [
+      "Фундамент",
+      `лента ${r.foundation.widthMm}×${r.foundation.heightMm} мм`,
+    ],
+  ];
+  return (
+    <section>
+      <h3>Конструкции</h3>
+      <Num
+        label="Шаг колонн / ферм"
+        value={s.structural.columnStep}
+        step={0.5}
+        min={2}
+        max={12}
+        onChange={(columnStep) => s.patchStructural({ columnStep })}
+      />
+      <Select
+        label="Тип грунта"
+        value={s.structural.soilId}
+        onChange={(soilId) => s.patchStructural({ soilId })}
+      >
+        <option value="auto">Авто — по региону</option>
+        {SOIL_TYPES.map((soil) => (
+          <option key={soil.id} value={soil.id}>
+            {soil.name} · R {soil.range} кПа
+          </option>
+        ))}
+      </Select>
+      <Num
+        label="Глубина заложения"
+        value={s.structural.foundationDepth}
+        step={0.1}
+        min={0.8}
+        max={2.5}
+        onChange={(foundationDepth) => s.patchStructural({ foundationDepth })}
+      />
+      <div className="struct-mini">
+        {rows.map(([k, v]) => (
+          <div className="struct-mini-row" key={k}>
+            <span>{k}</span>
+            <strong>{v}</strong>
+          </div>
+        ))}
+      </div>
+      <small className="field-hint">
+        Подбор идёт сверху вниз: прогон → ферма → колонна → фундамент.
+        Подробности — на вкладке «Конструкции».
+      </small>
+    </section>
+  );
+}
 export function ProjectForms() {
   const s = useProjectStore();
   return (
     <div className="form-stack">
+      <ObjectForm />
       <section>
         <h3>Здание</h3>
         <Num
@@ -252,6 +367,7 @@ export function ProjectForms() {
       <PanelForm kind="wallPanelSystem" title="Стеновые панели" />
       <PanelForm kind="roofPanelSystem" title="Кровельные панели" />
       <OpeningsForm />
+      <StructuralForm />
       <section>
         <h3>Расчет и цены</h3>
         <Select
@@ -318,6 +434,9 @@ export function ProjectForms() {
           min={0}
           onChange={(n) => s.patchSettings({ transportDistanceKm: n })}
         />
+        <small className="field-hint">
+          Заполняется автоматически по региону объекта, можно уточнить вручную.
+        </small>
         <Num
           label="Тариф транспорта, сом/км"
           value={s.calculationSettings.transportRatePerKm}
@@ -337,54 +456,39 @@ export function ProjectForms() {
           Объединять зеркальные
         </label>
       </section>
-      <section>
-        <h3>Коммерция и смета</h3>
-        <Text
-          label="Название объекта"
-          value={s.commercial.objectName}
-          placeholder="Напр.: Ангар 24×48 м"
-          onChange={(objectName) => s.patchCommercial({ objectName })}
-        />
-        <Text
-          label="Адрес объекта"
-          value={s.commercial.objectAddress}
-          placeholder="Город, улица, ориентир"
-          onChange={(objectAddress) => s.patchCommercial({ objectAddress })}
-        />
-        <Text
-          label="Заказчик"
-          value={s.commercial.customer}
-          placeholder="ФИО или ОсОО"
-          onChange={(customer) => s.patchCommercial({ customer })}
-        />
-        <Text
-          label="Контакт"
-          value={s.commercial.contact}
-          placeholder="+996 ..."
-          onChange={(contact) => s.patchCommercial({ contact })}
-        />
-        <Text
-          label="Менеджер"
-          value={s.commercial.managerName}
-          onChange={(managerName) => s.patchCommercial({ managerName })}
-        />
-        <Text
-          label="Телефон менеджера"
-          value={s.commercial.managerPhone}
-          onChange={(managerPhone) => s.patchCommercial({ managerPhone })}
-        />
-        <Text
-          label="Завод (отправление)"
-          value={s.commercial.factoryName}
-          onChange={(factoryName) => s.patchCommercial({ factoryName })}
-        />
-        <Text
-          label="Адрес завода"
-          value={s.commercial.factoryAddress}
-          onChange={(factoryAddress) => s.patchCommercial({ factoryAddress })}
-        />
-      </section>
+      <ManagerCard />
     </div>
+  );
+}
+// Блок «Менеджер»: данные приходят из личного кабинета авторизации,
+// каждый раз заново их вводить не нужно.
+function ManagerCard() {
+  const s = useProjectStore();
+  return (
+    <section className="manager-card">
+      <h3>Менеджер</h3>
+      <div className="manager-info">
+        <div>
+          <span>Менеджер</span>
+          <strong>{s.commercial.managerName || "—"}</strong>
+        </div>
+        <div>
+          <span>Телефон</span>
+          <strong>{s.commercial.managerPhone || "—"}</strong>
+        </div>
+        <div>
+          <span>Завод (отправление)</span>
+          <strong>{s.commercial.factoryName || "—"}</strong>
+        </div>
+        <div>
+          <span>Адрес завода</span>
+          <strong>{s.commercial.factoryAddress || "—"}</strong>
+        </div>
+      </div>
+      <small className="field-hint">
+        Изменяется в личном кабинете (иконка профиля в шапке).
+      </small>
+    </section>
   );
 }
 const OPENING_TYPES: { value: Opening["type"]; label: string }[] = [

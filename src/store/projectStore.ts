@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { calculateProject } from "../calculation/calculateProject";
 import { defaultProject } from "../domain/defaultProject";
 import { DEFAULT_ROOF_RAL, DEFAULT_WALL_RAL } from "../domain/ral";
+import { regionById } from "../domain/regions";
 import type {
   Opening,
   ProjectCalculation,
@@ -11,6 +12,7 @@ const KEY = "sandwich-panels-project-v1";
 const withPanelRules = (project: ProjectInput): ProjectInput => ({
   ...project,
   openings: project.openings ?? [],
+  structural: { ...defaultProject.structural, ...project.structural },
   wallPanelSystem: {
     ...project.wallPanelSystem,
     thickness: project.wallPanelSystem.thickness ?? 100,
@@ -55,6 +57,8 @@ interface State extends ProjectInput {
   ) => void;
   patchSettings: (v: Partial<ProjectInput["calculationSettings"]>) => void;
   patchCommercial: (v: Partial<ProjectInput["commercial"]>) => void;
+  patchStructural: (v: Partial<ProjectInput["structural"]>) => void;
+  setRegion: (regionId: string) => void;
   addOpening: (o: Opening) => void;
   updateOpening: (id: string, v: Partial<Opening>) => void;
   removeOpening: (id: string) => void;
@@ -87,6 +91,7 @@ function projectOf(s: State): ProjectInput {
     openings: s.openings,
     calculationSettings: s.calculationSettings,
     commercial: s.commercial,
+    structural: s.structural,
   };
 }
 function recalc(
@@ -126,6 +131,17 @@ export const useProjectStore = create<State>((set, get) => ({
     }),
   patchCommercial: (v) =>
     recalc(set, get, { commercial: { ...get().commercial, ...v } }),
+  patchStructural: (v) =>
+    recalc(set, get, { structural: { ...get().structural, ...v } }),
+  // Геометка объекта: регион определяет снег/ветер/грунт и транспортное плечо
+  setRegion: (regionId) =>
+    recalc(set, get, {
+      structural: { ...get().structural, regionId },
+      calculationSettings: {
+        ...get().calculationSettings,
+        transportDistanceKm: regionById(regionId).transportKm,
+      },
+    }),
   addOpening: (o) => recalc(set, get, { openings: [...get().openings, o] }),
   updateOpening: (id, v) =>
     recalc(set, get, {

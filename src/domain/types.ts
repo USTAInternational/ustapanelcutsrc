@@ -128,6 +128,16 @@ export interface CalculationSettings {
   transportDistanceKm: number;
   transportRatePerKm: number;
 }
+export interface StructuralSettings {
+  /** Регион объекта — определяет снег, ветер, грунты и транспортное плечо */
+  regionId: string;
+  /** Шаг колонн / ферм вдоль здания, мм */
+  columnStep: number;
+  /** Тип грунта: "auto" — по региону, иначе id из SOIL_TYPES */
+  soilId: string;
+  /** Глубина заложения фундамента, мм */
+  foundationDepth: number;
+}
 export interface CommercialInfo {
   objectName: string;
   objectAddress: string;
@@ -179,6 +189,7 @@ export interface ProjectInput {
   openings: Opening[];
   calculationSettings: CalculationSettings;
   commercial: CommercialInfo;
+  structural: StructuralSettings;
 }
 export interface ProjectSummary {
   wallArea: number;
@@ -203,6 +214,7 @@ export interface ProjectCalculation {
   groups: GroupedPanel[];
   warnings: CalculationWarning[];
   summary: ProjectSummary;
+  structural: import("../calculation/structural").StructuralResult;
 }
 export interface SavedProject extends ProjectInput {
   formatVersion: 1;

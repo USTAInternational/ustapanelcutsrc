@@ -1,5 +1,16 @@
-import type { CommercialInfo, ProjectInput } from "./types";
+import type {
+  CommercialInfo,
+  ProjectInput,
+  StructuralSettings,
+} from "./types";
 import { DEFAULT_ROOF_RAL, DEFAULT_WALL_RAL } from "./ral";
+import { DEFAULT_REGION_ID } from "./regions";
+export const defaultStructural: StructuralSettings = {
+  regionId: DEFAULT_REGION_ID,
+  columnStep: 6000,
+  soilId: "auto",
+  foundationDepth: 1500,
+};
 export const defaultCommercial: CommercialInfo = {
   objectName: "",
   objectAddress: "",
@@ -75,4 +86,5 @@ export const defaultProject: ProjectInput = {
     transportRatePerKm: 120,
   },
   commercial: defaultCommercial,
+  structural: defaultStructural,
 };

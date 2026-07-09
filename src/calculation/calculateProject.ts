@@ -9,6 +9,7 @@ import { polygonArea } from "../geometry/core";
 import { applyOpeningsToPanels, openingIsValid } from "../geometry/openings";
 import { layoutPanelsOnSurface } from "../geometry/layout";
 import { createBuildingSurfaces, resolveRoof } from "../geometry/surfaces";
+import { calculateStructural } from "./structural";
 const round = (n: number, t: number) => Math.round(n / t) * t;
 function canonicalPolygon(points: number[][]): string {
   const rings = [points, [...points].reverse()];
@@ -287,11 +288,25 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
     total: materialsSum + worksSum + transportSum,
     mountDays: Math.max(1, Math.ceil(panelAreaM2 / productivity)),
   };
+  const structural = calculateStructural(
+    input.building,
+    input.roof,
+    input.wallPanelSystem.thickness,
+    input.roofPanelSystem.thickness,
+    input.structural,
+  );
+  for (const message of structural.warnings)
+    warnings.push({
+      id: `structural-${message}`,
+      severity: "warning",
+      message,
+    });
   return {
     surfaces,
     panels,
     groups,
     warnings,
+    structural,
     summary: {
       wallArea: wallSurfaces.reduce((s, v) => s + polygonArea(v.polygon), 0),
       roofArea: roofSurfaces.reduce((s, v) => s + polygonArea(v.polygon), 0),
