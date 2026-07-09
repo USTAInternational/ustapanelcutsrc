@@ -334,6 +334,7 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
     input.wallPanelSystem.thickness,
     input.roofPanelSystem.thickness,
     input.structural,
+    input.openings,
   );
   for (const message of structural.warnings)
     warnings.push({

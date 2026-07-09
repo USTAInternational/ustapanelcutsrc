@@ -11,6 +11,7 @@ import type {
   BuildingDimensions,
   ColumnType,
   FoundationType,
+  Opening,
   RoofSettings,
   StructuralSettings,
 } from "../domain/types";
@@ -235,6 +236,11 @@ export interface FoundationResult {
   mainRebar: string;
   stirrups: string;
   concrete: string;
+  mainBarCount: number;
+  rebarLayers: number;
+  rebarMassKg: number;
+  coverMm: number;
+  rebarStepMm: number;
   /** Лента: длина, пог.м; столбчатый: количество, шт */
   lengthM: number;
   count: number;
@@ -250,6 +256,12 @@ export interface StructuralResult {
   truss: TrussResult;
   column: ColumnResult;
   foundation: FoundationResult;
+  openingFrames: {
+    count: number;
+    totalLengthM: number;
+    totalMassKg: number;
+    profiles: string;
+  };
   totalSteelKg: number;
   warnings: string[];
 }
@@ -527,6 +539,7 @@ function selectFoundation(
   depthM: number,
   perimeterM: number,
   columnCount: number,
+  settings: StructuralSettings,
 ): FoundationResult {
   const bearing = soil.resistanceKpa * (1 - 0.1 * depthM);
   const common = {
@@ -534,21 +547,35 @@ function selectFoundation(
     soilResistanceKpa: soil.resistanceKpa,
     soilRange: soil.range,
     depthMm: Math.round(depthM * 1000),
-    stirrups: "Ø8 A240, шаг 200 мм",
-    concrete: "Бетон не ниже B20",
+    stirrups: `Ø${settings.foundationStirrupDiameterMm} A240, шаг ${settings.foundationRebarStepMm} мм`,
+    concrete: `Бетон ${settings.foundationConcreteClass}`,
+    coverMm: settings.foundationCoverMm,
+    rebarStepMm: settings.foundationRebarStepMm,
   };
+  const unitMass = (diameterMm: number) => (diameterMm * diameterMm) / 162;
   if (type === "pad") {
     // Столбчатый: квадратная плита под каждую колонну, a = √(N / R′)
     const rawSide = Math.sqrt(columnLoadKn / bearing);
     const sideM = Math.max(0.8, Math.ceil(rawSide * 10) / 10);
     const plateM = sideM <= 1.2 ? 0.3 : sideM <= 1.8 ? 0.4 : 0.5;
+    const layers = sideM <= 1.2 ? 1 : 2;
+    const clearLengthM = Math.max(0.2, sideM - (2 * settings.foundationCoverMm) / 1000);
+    const barsPerDirection = Math.max(
+      2,
+      Math.ceil((clearLengthM * 1000) / settings.foundationRebarStepMm) + 1,
+    );
+    const gridLengthM = barsPerDirection * clearLengthM * 2 * layers * columnCount;
     return {
       ...common,
       type,
       loadKnM: columnLoadKn,
       widthMm: Math.round(sideM * 1000),
       heightMm: Math.round(plateM * 1000),
-      mainRebar: `Сетка Ø12 A500, шаг 200 мм (${sideM <= 1.2 ? "1" : "2"} слой)`,
+      mainRebar: `Сетка Ø${settings.foundationMainRebarDiameterMm} ${settings.foundationRebarClass}, шаг ${settings.foundationRebarStepMm} мм (${layers} слой)`,
+      mainBarCount: barsPerDirection * 2 * layers * columnCount,
+      rebarLayers: layers,
+      rebarMassKg:
+        gridLengthM * unitMass(settings.foundationMainRebarDiameterMm),
       lengthM: 0,
       count: columnCount,
       volumeM3: sideM * sideM * plateM * columnCount,
@@ -559,21 +586,30 @@ function selectFoundation(
   const rawWidth = loadKnM / bearing;
   const widthM = Math.max(0.4, Math.ceil(rawWidth * 10) / 10);
   const heightM = Math.min(1.5, Math.max(0.8, depthM));
-  const mainRebar =
-    widthM <= 0.6
-      ? "4Ø14 A500"
-      : widthM <= 0.8
-        ? "4Ø16 A500"
-        : widthM <= 1.0
-          ? "6Ø14 A500"
-          : "6Ø16 A500";
+  const mainBarCount = widthM <= 0.8 ? 4 : 6;
+  const clearW = Math.max(0.1, widthM - (2 * settings.foundationCoverMm) / 1000);
+  const clearH = Math.max(0.1, heightM - (2 * settings.foundationCoverMm) / 1000);
+  const stirrupLengthM = 2 * (clearW + clearH);
+  const stirrupCount = Math.ceil(
+    (perimeterM * 1000) / settings.foundationRebarStepMm,
+  );
+  const rebarMassKg =
+    perimeterM *
+      mainBarCount *
+      unitMass(settings.foundationMainRebarDiameterMm) +
+    stirrupCount *
+      stirrupLengthM *
+      unitMass(settings.foundationStirrupDiameterMm);
   return {
     ...common,
     type,
     loadKnM,
     widthMm: Math.round(widthM * 1000),
     heightMm: Math.round(heightM * 1000),
-    mainRebar,
+    mainRebar: `${mainBarCount}Ø${settings.foundationMainRebarDiameterMm} ${settings.foundationRebarClass}`,
+    mainBarCount,
+    rebarLayers: 1,
+    rebarMassKg,
     lengthM: perimeterM,
     count: 1,
     volumeM3: widthM * heightM * perimeterM,
@@ -586,6 +622,7 @@ export function calculateStructural(
   wallThicknessMm: number,
   roofThicknessMm: number,
   structural: StructuralSettings,
+  openings: Opening[] = [],
 ): StructuralResult {
   const warnings: string[] = [];
   const region = regionById(structural.regionId);
@@ -707,17 +744,41 @@ export function calculateStructural(
     Math.min(2.5, Math.max(0.8, structural.foundationDepth / 1000)),
     perimeterM,
     column.count,
+    structural,
   );
   if (region.soil.includes("просадочные") && structural.soilId === "auto")
     warnings.push(
       "Грунты региона просадочные — рекомендуется уточнить геологию площадки",
     );
 
+  const openingFrames = openings.reduce(
+    (total, opening) => {
+      const lengthM =
+        (2 * opening.height +
+          opening.width +
+          (opening.type === "gate" ? 0 : opening.width)) /
+        1000;
+      const massKgM = opening.type === "gate" ? 8.6 : 4.4;
+      return {
+        count: total.count + 1,
+        totalLengthM: total.totalLengthM + lengthM,
+        totalMassKg: total.totalMassKg + lengthM * massKgM,
+        profiles: "профтруба 80×80 / 120×120 для ворот",
+      };
+    },
+    {
+      count: 0,
+      totalLengthM: 0,
+      totalMassKg: 0,
+      profiles: "профтруба 80×80 / 120×120 для ворот",
+    },
+  );
   const totalSteelKg =
     wallGirt.totalMassKg +
     purlin.totalMassKg +
     truss.massPerTrussKg * truss.count +
-    column.count * wallM * column.massKgM;
+    column.count * wallM * column.massKgM +
+    openingFrames.totalMassKg;
 
   return {
     regionName: region.name,
@@ -729,6 +790,7 @@ export function calculateStructural(
     truss,
     column,
     foundation,
+    openingFrames,
     totalSteelKg,
     warnings,
   };

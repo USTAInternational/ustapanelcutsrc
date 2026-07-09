@@ -113,7 +113,9 @@ describe("каскад конструкций", () => {
     expect(r.foundation.widthMm).toBeGreaterThanOrEqual(400);
     expect(r.foundation.widthMm % 100).toBe(0);
     expect(r.foundation.mainRebar).toContain("A500");
-    expect(r.foundation.concrete).toContain("B20");
+    expect(r.foundation.concrete).toContain("B25");
+    expect(r.foundation.rebarMassKg).toBeGreaterThan(0);
+    expect(r.foundation.coverMm).toBe(50);
   });
   it("пример из схемы: N=650кН, шаг 6м, Бишкек → B=700мм", () => {
     // Проверяем формулу подбора подошвы на контрольном примере листа

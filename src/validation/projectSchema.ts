@@ -37,6 +37,12 @@ const structuralSchema = z
       .default("i-beam"),
     columnSection: z.string().default("auto"),
     foundationType: z.enum(["strip", "pad"]).default("strip"),
+    foundationConcreteClass: z.string().min(1).default(defaultStructural.foundationConcreteClass),
+    foundationRebarClass: z.enum(["A400", "A500C"]).default("A500C"),
+    foundationMainRebarDiameterMm: finitePositive.default(defaultStructural.foundationMainRebarDiameterMm),
+    foundationStirrupDiameterMm: finitePositive.default(defaultStructural.foundationStirrupDiameterMm),
+    foundationRebarStepMm: finitePositive.default(defaultStructural.foundationRebarStepMm),
+    foundationCoverMm: finitePositive.default(defaultStructural.foundationCoverMm),
   })
   .default(defaultStructural);
 const panel = z

@@ -182,6 +182,8 @@ export function StructuralTab() {
           />
           <Row k="Нижняя арматура" v={r.foundation.mainRebar} />
           <Row k="Хомуты" v={r.foundation.stirrups} />
+          <Row k="Защитный слой" v={`${r.foundation.coverMm} мм`} />
+          <Row k="Масса арматуры" v={`${n0(r.foundation.rebarMassKg)} кг`} />
           <Row k="Бетон" v={r.foundation.concrete} />
           <Row
             k="Объём бетона"
@@ -202,6 +204,12 @@ export function StructuralTab() {
         <div className="summary-card">
           <span>Металл каркаса (оценка)</span>
           <strong>{n0(r.totalSteelKg)} кг</strong>
+        </div>
+        <div className="summary-card">
+          <span>Усиление проёмов</span>
+          <strong>
+            {r.openingFrames.count} шт · {n0(r.openingFrames.totalMassKg)} кг
+          </strong>
         </div>
         <div className="summary-card">
           <span>Транспортное плечо региона</span>

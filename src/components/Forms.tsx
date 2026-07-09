@@ -350,6 +350,70 @@ function StructuralForm() {
         max={2.5}
         onChange={(foundationDepth) => s.patchStructural({ foundationDepth })}
       />
+      <Text
+        label="Класс бетона фундамента"
+        value={s.structural.foundationConcreteClass}
+        onChange={(foundationConcreteClass) =>
+          s.patchStructural({ foundationConcreteClass })
+        }
+      />
+      <Select
+        label="Класс рабочей арматуры"
+        value={s.structural.foundationRebarClass}
+        onChange={(foundationRebarClass) =>
+          s.patchStructural({
+            foundationRebarClass:
+              foundationRebarClass as typeof s.structural.foundationRebarClass,
+          })
+        }
+      >
+        <option value="A500C">A500C</option>
+        <option value="A400">A400</option>
+      </Select>
+      <Num
+        label="Диаметр рабочей арматуры"
+        value={s.structural.foundationMainRebarDiameterMm}
+        unit="мм"
+        step={2}
+        min={8}
+        max={32}
+        onChange={(foundationMainRebarDiameterMm) =>
+          s.patchStructural({ foundationMainRebarDiameterMm })
+        }
+      />
+      <Num
+        label="Диаметр хомутов"
+        value={s.structural.foundationStirrupDiameterMm}
+        unit="мм"
+        step={2}
+        min={6}
+        max={16}
+        onChange={(foundationStirrupDiameterMm) =>
+          s.patchStructural({ foundationStirrupDiameterMm })
+        }
+      />
+      <Num
+        label="Шаг арматуры / хомутов"
+        value={s.structural.foundationRebarStepMm}
+        unit="мм"
+        step={25}
+        min={100}
+        max={400}
+        onChange={(foundationRebarStepMm) =>
+          s.patchStructural({ foundationRebarStepMm })
+        }
+      />
+      <Num
+        label="Защитный слой бетона"
+        value={s.structural.foundationCoverMm}
+        unit="мм"
+        step={5}
+        min={30}
+        max={100}
+        onChange={(foundationCoverMm) =>
+          s.patchStructural({ foundationCoverMm })
+        }
+      />
       <Num
         label="Вынос панелей от каркаса"
         value={s.structural.panelOffsetMm}

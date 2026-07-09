@@ -116,6 +116,9 @@ function drawOpeningNode(
   const frameH = h - 130;
   const frameW = gate ? w - 180 : w - 220;
   const frameX = x + (w - frameW) / 2;
+  ctx.strokeStyle = STEEL;
+  ctx.lineWidth = gate ? 18 : 12;
+  ctx.strokeRect(frameX - 22, frameY - 22, frameW + 44, frameH + 44);
   ctx.fillStyle = PANEL;
   ctx.fillRect(frameX, frameY, frameW, panelT);
   ctx.fillRect(frameX, frameY, panelT, frameH);
@@ -128,6 +131,40 @@ function drawOpeningNode(
   ctx.fillRect(frameX - 12, frameY - 12, frameW + 24, 10);
   ctx.fillRect(frameX - 12, frameY - 2, 10, frameH + (gate ? 0 : 10));
   ctx.fillRect(frameX + frameW + 2, frameY - 2, 10, frameH + (gate ? 0 : 10));
+}
+
+function drawFoundationNode(
+  ctx: CanvasRenderingContext2D,
+  box: { x: number; y: number; w: number; h: number },
+  input: ProjectInput,
+) {
+  const { x, y, w, h } = box;
+  const left = x + 90;
+  const top = y + 92;
+  const cw = w - 180;
+  const ch = h - 180;
+  ctx.fillStyle = "#d0d2d4";
+  ctx.fillRect(left, top, cw, ch);
+  const cover = Math.max(22, Math.min(54, input.structural.foundationCoverMm));
+  ctx.strokeStyle = "#9b4a32";
+  ctx.lineWidth = 7;
+  ctx.strokeRect(left + cover, top + cover, cw - 2 * cover, ch - 2 * cover);
+  for (let i = 0; i < 5; i++) {
+    const bx = left + cover + ((cw - 2 * cover) * i) / 4;
+    for (const by of [top + cover, top + ch - cover]) {
+      ctx.beginPath();
+      ctx.arc(bx, by, 9, 0, Math.PI * 2);
+      ctx.fillStyle = "#9b4a32";
+      ctx.fill();
+    }
+  }
+  ctx.fillStyle = "#34495a";
+  ctx.font = "16px Arial";
+  ctx.fillText(
+    `Ø${input.structural.foundationMainRebarDiameterMm} ${input.structural.foundationRebarClass}; шаг ${input.structural.foundationRebarStepMm} мм`,
+    left,
+    y + h - 48,
+  );
 }
 
 function drawRoofNode(
@@ -195,6 +232,12 @@ function collectNodes(input: ProjectInput): NodeCard[] {
       subtitle: `Вентзазор ${input.structural.facadeVentGapMm} мм · фасонный угол`,
       source: "Основано на ATR МП ТСП 2025 / ATR SPPS",
       draw: drawCornerNode,
+    },
+    {
+      title: "Армирование фундамента",
+      subtitle: `${input.structural.foundationConcreteClass} · защитный слой ${input.structural.foundationCoverMm} мм`,
+      source: "Эталон ПНС, КР: листы 26–32 — схемы армирования и спецификация",
+      draw: drawFoundationNode,
     },
   ];
   if (input.openings.some((opening) => opening.type === "window"))

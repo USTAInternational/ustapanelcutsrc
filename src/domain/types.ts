@@ -164,6 +164,12 @@ export interface StructuralSettings {
   columnSection: string;
   /** Тип фундамента: ленточный или столбчатый под колонны */
   foundationType: FoundationType;
+  foundationConcreteClass: string;
+  foundationRebarClass: "A400" | "A500C";
+  foundationMainRebarDiameterMm: number;
+  foundationStirrupDiameterMm: number;
+  foundationRebarStepMm: number;
+  foundationCoverMm: number;
 }
 export interface CommercialInfo {
   objectName: string;

@@ -17,6 +17,12 @@ export const defaultStructural: StructuralSettings = {
   columnType: "i-beam",
   columnSection: "auto",
   foundationType: "strip",
+  foundationConcreteClass: "B25 W8 F150",
+  foundationRebarClass: "A500C",
+  foundationMainRebarDiameterMm: 14,
+  foundationStirrupDiameterMm: 8,
+  foundationRebarStepMm: 200,
+  foundationCoverMm: 50,
 };
 export const defaultCommercial: CommercialInfo = {
   objectName: "",

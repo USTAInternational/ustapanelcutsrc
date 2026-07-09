@@ -7,6 +7,8 @@ import {
   EdgesGeometry,
   Float32BufferAttribute,
   Quaternion,
+  ShapeUtils,
+  Vector2,
   Vector3,
 } from "three";
 import type { Opening, PanelPiece, Point2D, Surface } from "../domain/types";
@@ -35,29 +37,42 @@ function mapperNormal(mapper: Mapper): Vector3 {
 
 function extrudedGeometry(
   polygon: Point2D[],
+  holes: Point2D[][],
   mapper: Mapper,
   normal: Vector3,
   innerOffset: number,
   thickness: number,
 ) {
-  const front = polygon.map((point) =>
+  const contour2d = polygon.map((point) => new Vector2(point.x, point.y));
+  const holes2d = holes
+    .filter((hole) => hole.length >= 3)
+    .map((hole) => hole.map((point) => new Vector2(point.x, point.y)));
+  const vertices2d = [...contour2d, ...holes2d.flat()];
+  const triangles = ShapeUtils.triangulateShape(contour2d, holes2d);
+  const front = vertices2d.map((point) =>
     pointOnNormal(mapper(point), normal, innerOffset),
   );
-  const back = polygon.map((point) =>
+  const back = vertices2d.map((point) =>
     pointOnNormal(mapper(point), normal, innerOffset + thickness),
   );
   const positions: number[] = [];
   const pushTriangle = (a: WorldPoint, b: WorldPoint, c: WorldPoint) => {
     positions.push(...a, ...b, ...c);
   };
-  for (let index = 1; index < front.length - 1; index++) {
-    pushTriangle(front[0], front[index], front[index + 1]);
-    pushTriangle(back[0], back[index + 1], back[index]);
+  for (const [a, b, c] of triangles) {
+    pushTriangle(front[a], front[b], front[c]);
+    pushTriangle(back[a], back[c], back[b]);
   }
-  for (let index = 0; index < front.length; index++) {
-    const next = (index + 1) % front.length;
-    pushTriangle(front[index], front[next], back[next]);
-    pushTriangle(front[index], back[next], back[index]);
+  let cursor = 0;
+  for (const ring of [contour2d, ...holes2d]) {
+    for (let index = 0; index < ring.length; index++) {
+      const next = (index + 1) % ring.length;
+      const a = cursor + index;
+      const b = cursor + next;
+      pushTriangle(front[a], front[b], back[b]);
+      pushTriangle(front[a], back[b], back[a]);
+    }
+    cursor += ring.length;
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
@@ -118,7 +133,30 @@ function PanelSolid({
   thickness: number;
 }) {
   const geometry = useMemo(() => {
-    return extrudedGeometry(panel.polygon, mapper, normal, innerOffset, thickness);
+    const epsilon = 0.5;
+    const holes = panel.cutouts.map((cutout) => {
+      const xs = cutout.polygon.map((point) => point.x);
+      const ys = cutout.polygon.map((point) => point.y);
+      const minX = Math.min(...xs) + epsilon;
+      const maxX = Math.max(...xs) - epsilon;
+      const minY = Math.min(...ys) + epsilon;
+      const maxY = Math.max(...ys) - epsilon;
+      if (maxX <= minX || maxY <= minY) return cutout.polygon;
+      return [
+        { x: minX, y: minY },
+        { x: maxX, y: minY },
+        { x: maxX, y: maxY },
+        { x: minX, y: maxY },
+      ];
+    });
+    return extrudedGeometry(
+      panel.polygon,
+      holes,
+      mapper,
+      normal,
+      innerOffset,
+      thickness,
+    );
   }, [innerOffset, mapper, normal, panel, thickness]);
   const points = [...panel.polygon, panel.polygon[0]].map((point) =>
     pointOnNormal(mapper(point), normal, innerOffset + thickness),
@@ -164,6 +202,7 @@ function PanelSolids({
   color,
   innerOffset,
   thickness,
+  normal,
 }: {
   panels: PanelPiece[];
   mapper: Mapper;
@@ -172,8 +211,8 @@ function PanelSolids({
   color: string;
   innerOffset: number;
   thickness: number;
+  normal: Vector3;
 }) {
-  const normal = useMemo(() => mapperNormal(mapper), [mapper]);
   return panels.map((panel) => (
     <PanelSolid
       key={panel.id}
@@ -238,6 +277,38 @@ function OpeningMesh({
 const STEEL = "#8f979f";
 const STEEL_DARK = "#787f87";
 const CONCRETE = "#b9bcbd";
+const REBAR = "#9b4a32";
+
+function OpeningFrame({
+  opening,
+  mapper,
+  normal,
+  panelInnerOffset,
+}: {
+  opening: Opening;
+  mapper: Mapper;
+  normal: Vector3;
+  panelInnerOffset: number;
+}) {
+  const profile = opening.type === "gate" ? 0.12 : 0.08;
+  const frameOffset = Math.max(0, panelInnerOffset - profile / 2);
+  const point = (x: number, y: number) =>
+    pointOnNormal(mapper({ x, y }), normal, frameOffset);
+  const x1 = opening.x;
+  const x2 = opening.x + opening.width;
+  const y1 = opening.y;
+  const y2 = opening.y + opening.height;
+  return (
+    <group>
+      <Member a={point(x1, y1)} b={point(x1, y2)} size={profile} color={STEEL_DARK} />
+      <Member a={point(x2, y1)} b={point(x2, y2)} size={profile} color={STEEL_DARK} />
+      <Member a={point(x1, y2)} b={point(x2, y2)} size={profile} color={STEEL_DARK} />
+      {opening.type !== "gate" && (
+        <Member a={point(x1, y1)} b={point(x2, y1)} size={profile} color={STEEL_DARK} />
+      )}
+    </group>
+  );
+}
 
 /** Стержень каркаса между двумя точками (визуализация профиля коробкой) */
 function Member({
@@ -271,6 +342,147 @@ function Member({
       <meshStandardMaterial color={color} roughness={0.55} metalness={0.35} />
     </mesh>
   );
+}
+
+function FoundationRebar({
+  frames,
+  half,
+  length,
+  depth,
+  stripWidth,
+  padSide,
+  padHeight,
+  type,
+  coverMm,
+  stepMm,
+  layers,
+}: {
+  frames: number[];
+  half: number;
+  length: number;
+  depth: number;
+  stripWidth: number;
+  padSide: number;
+  padHeight: number;
+  type: "strip" | "pad";
+  coverMm: number;
+  stepMm: number;
+  layers: number;
+}) {
+  const cover = Math.min(0.12, Math.max(0.03, coverMm / 1000));
+  const step = Math.max(0.1, stepMm / 1000);
+  const line = (a: WorldPoint, b: WorldPoint, key: string) => (
+    <Line
+      key={key}
+      points={[a, b]}
+      color={REBAR}
+      lineWidth={2.2}
+      depthTest={false}
+      renderOrder={10}
+    />
+  );
+  if (type === "pad") {
+    const clear = Math.max(0.2, padSide - 2 * cover);
+    const count = Math.max(2, Math.ceil(clear / step));
+    const positions = Array.from(
+      { length: count + 1 },
+      (_, i) => -clear / 2 + (clear * i) / count,
+    );
+    const layerY = layers > 1
+      ? [-padHeight + cover, -cover]
+      : [-padHeight + cover];
+    return (
+      <group>
+        {frames.flatMap((x) =>
+          [-half, half].flatMap((z) =>
+            layerY.flatMap((y, layerIndex) =>
+              positions.flatMap((offset, i) => [
+                line(
+                  [x - clear / 2, y, z + offset],
+                  [x + clear / 2, y, z + offset],
+                  `px-${x}-${z}-${layerIndex}-${i}`,
+                ),
+                line(
+                  [x + offset, y, z - clear / 2],
+                  [x + offset, y, z + clear / 2],
+                  `pz-${x}-${z}-${layerIndex}-${i}`,
+                ),
+              ]),
+            ),
+          ),
+        )}
+      </group>
+    );
+  }
+  const top = 0.3 - cover;
+  const bottom = -depth + cover;
+  const lateral = Math.max(0.02, stripWidth / 2 - cover);
+  const bars: React.ReactNode[] = [];
+  for (const z of [-half, half]) {
+    for (const y of [bottom, top]) {
+      for (const dz of [-lateral, lateral])
+        bars.push(
+          line(
+            [-length / 2, y, z + dz],
+            [length / 2, y, z + dz],
+            `long-x-${z}-${y}-${dz}`,
+          ),
+        );
+    }
+  }
+  for (const x of [-length / 2, length / 2]) {
+    for (const y of [bottom, top]) {
+      for (const dx of [-lateral, lateral])
+        bars.push(
+          line(
+            [x + dx, y, -half],
+            [x + dx, y, half],
+            `long-z-${x}-${y}-${dx}`,
+          ),
+        );
+    }
+  }
+  const stirrupStepX = Math.max(step, length / 70);
+  const stirrupStepZ = Math.max(step, (half * 2) / 50);
+  for (let x = -length / 2; x <= length / 2 + 1e-6; x += stirrupStepX) {
+    for (const z of [-half, half])
+      bars.push(
+        <Line
+          key={`st-x-${x}-${z}`}
+          points={[
+            [x, bottom, z - lateral],
+            [x, top, z - lateral],
+            [x, top, z + lateral],
+            [x, bottom, z + lateral],
+            [x, bottom, z - lateral],
+          ]}
+          color={REBAR}
+          lineWidth={1.8}
+          depthTest={false}
+          renderOrder={10}
+        />,
+      );
+  }
+  for (let z = -half; z <= half + 1e-6; z += stirrupStepZ) {
+    for (const x of [-length / 2, length / 2])
+      bars.push(
+        <Line
+          key={`st-z-${x}-${z}`}
+          points={[
+            [x - lateral, bottom, z],
+            [x - lateral, top, z],
+            [x + lateral, top, z],
+            [x + lateral, bottom, z],
+            [x - lateral, bottom, z],
+          ]}
+          color={REBAR}
+          lineWidth={1.8}
+          depthTest={false}
+          renderOrder={10}
+        />,
+      );
+  }
+  return <group>{bars}</group>;
 }
 
 /** Ферма в плоскости рамы x=const: пояса + треугольная решётка со стойками */
@@ -338,7 +550,7 @@ function TrussAt({
 }
 
 /** Несущий каркас: колонны, фермы, прогоны и фундамент из результатов подбора */
-function Frame() {
+function Frame({ showRebar = false }: { showRebar?: boolean }) {
   const { building, roof: rawRoof, calculation, structural } = useProjectStore();
   const roof = resolveRoof(building, rawRoof);
   const result = calculation.structural;
@@ -347,7 +559,7 @@ function Frame() {
   const wallHeight = toMeters(building.wallHeight);
   const ridgeRise = Math.max(0, toMeters(roof.ridgeHeight) - wallHeight);
   const monoRise = Math.max(0, toMeters(roof.highSideHeight) - wallHeight);
-  const lowAtFront = roof.slopeDirection !== "left-to-right";
+  const lowAtFront = roof.slopeDirection === "left-to-right";
   const bays = Math.max(1, Math.ceil(length / Math.max(0.5, toMeters(structural.columnStep))));
   const frames = Array.from({ length: bays + 1 }, (_, i) => -length / 2 + (i * length) / bays);
   const half = width / 2;
@@ -362,32 +574,60 @@ function Frame() {
     (_, index) => result.wallGirt.stepM * (index + 1),
   ).filter((level) => level < wallHeight - 0.15);
   // Прогоны вдоль здания по скатам с шагом из подбора
-  const purlins: { y: number; z: number }[] = [];
+  const purlins: { y: number; z: number; normal: Vector3 }[] = [];
   if (roof.type === "gable" && ridgeRise > 0.01) {
     const slope = Math.hypot(half, ridgeRise);
-    const lines = Math.max(2, Math.floor(slope / result.purlin.stepM) + 1);
-    for (let i = 0; i <= lines; i++) {
-      const t = Math.min(1, (i * result.purlin.stepM) / slope);
+    const intervals = Math.max(1, Math.ceil(slope / result.purlin.stepM));
+    for (let i = 0; i <= intervals; i++) {
+      const t = i / intervals;
       for (const side of [-1, 1])
-        purlins.push({ y: wallHeight + ridgeRise * t, z: side * half * (1 - t) });
+        purlins.push({
+          y: wallHeight + ridgeRise * t,
+          z: side * half * (1 - t),
+          normal: new Vector3(0, half / slope, (side * ridgeRise) / slope),
+        });
     }
   } else if (roof.type === "mono" && monoRise > 0.01) {
     const slope = Math.hypot(width, monoRise);
-    const lines = Math.max(2, Math.floor(slope / result.purlin.stepM) + 1);
-    for (let i = 0; i <= lines; i++) {
-      const t = Math.min(1, (i * result.purlin.stepM) / slope);
+    const intervals = Math.max(1, Math.ceil(slope / result.purlin.stepM));
+    const directionZ = lowAtFront ? 1 : -1;
+    for (let i = 0; i <= intervals; i++) {
+      const t = i / intervals;
       const ratio = lowAtFront ? t : 1 - t;
-      purlins.push({ y: wallHeight + monoRise * ratio, z: -half + width * (lowAtFront ? t : 1 - t) });
+      purlins.push({
+        y: wallHeight + monoRise * ratio,
+        z: -half + width * (lowAtFront ? t : 1 - t),
+        normal: new Vector3(
+          0,
+          width / slope,
+          (-directionZ * monoRise) / slope,
+        ),
+      });
     }
   } else {
-    const lines = Math.max(2, Math.floor(width / result.purlin.stepM) + 1);
-    for (let i = 0; i <= lines; i++)
-      purlins.push({ y: wallHeight, z: Math.min(half, -half + i * result.purlin.stepM) });
+    const intervals = Math.max(1, Math.ceil(width / result.purlin.stepM));
+    for (let i = 0; i <= intervals; i++)
+      purlins.push({
+        y: wallHeight,
+        z: -half + (width * i) / intervals,
+        normal: new Vector3(0, 1, 0),
+      });
   }
   const foundationDepth = toMeters(structural.foundationDepth);
   const stripWidth = result.foundation.widthMm / 1000;
   const padSide = result.foundation.widthMm / 1000;
   const padHeight = result.foundation.heightMm / 1000;
+  const purlinSize = 0.08;
+  const roofSupportOffset = Math.max(
+    purlinSize / 2,
+    toMeters(structural.panelOffsetMm) - purlinSize / 2,
+  );
+  const wallGirtSize = 0.06;
+  const wallSupportOffset = Math.max(
+    columnSize / 2 + wallGirtSize / 2,
+    toMeters(structural.panelOffsetMm + structural.facadeVentGapMm) -
+      wallGirtSize / 2,
+  );
   return (
     <group>
       {frames.map((x) => (
@@ -408,7 +648,13 @@ function Frame() {
               {structural.foundationType === "pad" && (
                 <mesh position={[x, -padHeight / 2 - 0.02, z]}>
                   <boxGeometry args={[padSide, padHeight, padSide]} />
-                  <meshStandardMaterial color={CONCRETE} roughness={0.9} />
+                  <meshStandardMaterial
+                    color={CONCRETE}
+                    roughness={0.9}
+                    transparent={showRebar}
+                    opacity={showRebar ? 0.32 : 1}
+                    depthWrite={!showRebar}
+                  />
                 </mesh>
               )}
             </group>
@@ -427,36 +673,44 @@ function Frame() {
       {purlins.map((p, i) => (
         <Member
           key={`purlin-${i}`}
-          a={[-length / 2, p.y + 0.09, p.z]}
-          b={[length / 2, p.y + 0.09, p.z]}
-          size={0.08}
+          a={[
+            -length / 2,
+            p.y + p.normal.y * roofSupportOffset,
+            p.z + p.normal.z * roofSupportOffset,
+          ]}
+          b={[
+            length / 2,
+            p.y + p.normal.y * roofSupportOffset,
+            p.z + p.normal.z * roofSupportOffset,
+          ]}
+          size={purlinSize}
           color={STEEL_DARK}
         />
       ))}
       {wallGirtLevels.map((y, i) => (
         <group key={`girt-${i}`}>
           <Member
-            a={[-length / 2, y, -half]}
-            b={[length / 2, y, -half]}
-            size={0.06}
+            a={[-length / 2, y, -half - wallSupportOffset]}
+            b={[length / 2, y, -half - wallSupportOffset]}
+            size={wallGirtSize}
             color={STEEL_DARK}
           />
           <Member
-            a={[-length / 2, y, half]}
-            b={[length / 2, y, half]}
-            size={0.06}
+            a={[-length / 2, y, half + wallSupportOffset]}
+            b={[length / 2, y, half + wallSupportOffset]}
+            size={wallGirtSize}
             color={STEEL_DARK}
           />
           <Member
-            a={[-length / 2, y, -half]}
-            b={[-length / 2, y, half]}
-            size={0.06}
+            a={[-length / 2 - wallSupportOffset, y, -half]}
+            b={[-length / 2 - wallSupportOffset, y, half]}
+            size={wallGirtSize}
             color={STEEL_DARK}
           />
           <Member
-            a={[length / 2, y, -half]}
-            b={[length / 2, y, half]}
-            size={0.06}
+            a={[length / 2 + wallSupportOffset, y, -half]}
+            b={[length / 2 + wallSupportOffset, y, half]}
+            size={wallGirtSize}
             color={STEEL_DARK}
           />
         </group>
@@ -477,16 +731,43 @@ function Frame() {
               <boxGeometry
                 args={[strip.args[0], foundationDepth + 0.3, strip.args[2]]}
               />
-              <meshStandardMaterial color={CONCRETE} roughness={0.9} />
+              <meshStandardMaterial
+                color={CONCRETE}
+                roughness={0.9}
+                transparent={showRebar}
+                opacity={showRebar ? 0.32 : 1}
+                depthWrite={!showRebar}
+              />
             </mesh>
           ))}
         </group>
+      )}
+      {showRebar && (
+        <FoundationRebar
+          frames={frames}
+          half={half}
+          length={length}
+          depth={foundationDepth}
+          stripWidth={stripWidth}
+          padSide={padSide}
+          padHeight={padHeight}
+          type={structural.foundationType}
+          coverMm={result.foundation.coverMm}
+          stepMm={result.foundation.rebarStepMm}
+          layers={result.foundation.rebarLayers}
+        />
       )}
     </group>
   );
 }
 
-function Model() {
+function Model({
+  showPanels = true,
+  showOpeningFrames = true,
+}: {
+  showPanels?: boolean;
+  showOpeningFrames?: boolean;
+}) {
   const { building, roof: rawRoof, calculation, selectedSurfaceId, selectedPanelId, wallPanelSystem, roofPanelSystem, openings, structural } = useProjectStore();
   const roof = resolveRoof(building, rawRoof);
   const length = toMeters(building.length);
@@ -552,6 +833,15 @@ function Model() {
       {calculation.surfaces.map((surface) => {
         const mapper = mapperFor(surface.id);
         const normal = mapperNormal(mapper);
+        if (surface.type === "roof") {
+          if (normal.y < 0) normal.multiplyScalar(-1);
+        } else {
+          const center = new Vector3(
+            ...mapper({ x: surface.width / 2, y: surface.height / 2 }),
+          );
+          const outward = new Vector3(center.x, 0, center.z);
+          if (normal.dot(outward) < 0) normal.multiplyScalar(-1);
+        }
         const system =
           surface.type === "roof" ? roofPanelSystem : wallPanelSystem;
         const panelThickness = toMeters(system.thickness);
@@ -566,22 +856,27 @@ function Model() {
         );
         return (
           <group key={surface.id}>
-            <SurfaceMesh
-              surface={surface}
-              mapper={mapper}
-              selected={surface.id === selectedSurfaceId}
-              color={color}
-            />
-            <PanelSolids
-              panels={calculation.panels.filter((panel) => panel.surfaceId === surface.id)}
-              mapper={mapper}
-              selectedPanelId={selectedPanelId}
-              onSelect={selectIn3D}
-              color={color}
-              innerOffset={innerOffset}
-              thickness={panelThickness}
-            />
-            {openings
+            {showPanels && (
+              <>
+                <SurfaceMesh
+                  surface={surface}
+                  mapper={mapper}
+                  selected={surface.id === selectedSurfaceId}
+                  color={color}
+                />
+                <PanelSolids
+                  panels={calculation.panels.filter((panel) => panel.surfaceId === surface.id)}
+                  mapper={mapper}
+                  selectedPanelId={selectedPanelId}
+                  onSelect={selectIn3D}
+                  color={color}
+                  innerOffset={innerOffset}
+                  thickness={panelThickness}
+                  normal={normal}
+                />
+              </>
+            )}
+            {showPanels && openings
               .filter((o) => o.surfaceId === surface.id)
               .map((o) => (
                 <OpeningMesh
@@ -592,6 +887,19 @@ function Model() {
                   offset={innerOffset + panelThickness / 2}
                 />
               ))}
+            {showOpeningFrames &&
+              surface.type !== "roof" &&
+              openings
+                .filter((o) => o.surfaceId === surface.id)
+                .map((o) => (
+                  <OpeningFrame
+                    key={`frame-${o.id}`}
+                    opening={o}
+                    mapper={mapper}
+                    normal={normal}
+                    panelInnerOffset={innerOffset}
+                  />
+                ))}
           </group>
         );
       })}
@@ -628,8 +936,11 @@ export function Building3D() {
         <gridHelper args={[50, 50, "#9aa9b5", "#d3dbe1"]} />
         <Bounds fit clip observe margin={1.25}>
           <group>
-            {mode !== "frame" && <Model />}
-            {mode !== "panels" && <Frame />}
+            <Model
+              showPanels={mode !== "frame"}
+              showOpeningFrames={mode !== "panels"}
+            />
+            {mode !== "panels" && <Frame showRebar={mode === "frame"} />}
           </group>
         </Bounds>
         <OrbitControls makeDefault target={[0, 2, 0]} />
