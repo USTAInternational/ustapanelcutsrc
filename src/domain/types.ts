@@ -128,6 +128,8 @@ export interface CalculationSettings {
   transportDistanceKm: number;
   transportRatePerKm: number;
 }
+export type ColumnType = "i-beam" | "tube" | "double-channel";
+export type FoundationType = "strip" | "pad";
 export interface StructuralSettings {
   /** Регион объекта — определяет снег, ветер, грунты и транспортное плечо */
   regionId: string;
@@ -137,6 +139,15 @@ export interface StructuralSettings {
   soilId: string;
   /** Глубина заложения фундамента, мм */
   foundationDepth: number;
+  /** Профиль прогона: "auto" — подбор, иначе имя из сортамента
+   *  (ручной выбор = режим «по существующему каркасу» из листа 1) */
+  purlinProfile: string;
+  /** Тип сечения колонны (лист 1: двутавр / проф. труба / 2 швеллера) */
+  columnType: ColumnType;
+  /** Сечение колонны: "auto" — подбор, иначе имя из каталога типа */
+  columnSection: string;
+  /** Тип фундамента: ленточный или столбчатый под колонны */
+  foundationType: FoundationType;
 }
 export interface CommercialInfo {
   objectName: string;

@@ -110,30 +110,51 @@ export function StructuralTab() {
           </header>
           <Row k="Высота" v={`${n1(r.column.heightM)} м`} />
           <Row k="Нагрузка N (реакция фермы)" v={`${n0(r.column.loadKn)} кН`} />
-          <Row k="Двутавр (рекомендуется)" v={r.column.iBeam} />
-          <Row k="Профильная труба" v={r.column.tube} />
-          <Row k="2 швеллера" v={r.column.doubleChannel} />
+          <Row
+            k={`Сечение${r.column.manual ? " (задано)" : " (подобрано)"}`}
+            v={r.column.section}
+          />
+          <Row
+            k="Гибкость λ / φ"
+            v={`${n0(r.column.lambda)} / ${r.column.phi.toFixed(2)}`}
+          />
+          <Row k="Масса" v={`${n1(r.column.massKgM)} кг/м`} />
           <Row k="Количество" v={`${r.column.count} шт`} />
+          <Row
+            k="Аналоги (таблица)"
+            v={`${r.column.iBeam} · ${r.column.tube} · ${r.column.doubleChannel}`}
+          />
           {r.column.note && <Row k="Примечание" v={r.column.note} />}
-          <footer>λ = 80–140 · N/(φ·A·Ry·γc) ≤ 1</footer>
+          <footer>N/(φ·A·Ry·γc) ≤ 1 · λ = H/i ≤ 120–140 · μ = 1</footer>
         </section>
         <section className="struct-card">
           <header>
             <span className="struct-step">4</span>
-            <h3>Фундамент (ленточный)</h3>
+            <h3>
+              Фундамент (
+              {r.foundation.type === "strip" ? "ленточный" : "столбчатый"})
+            </h3>
           </header>
-          <Row k="Нагрузка на 1 пог.м" v={`${n0(r.foundation.loadKnM)} кН/м`} />
           <Row
-            k="Грунт"
-            v={`${r.foundation.soilName}`}
+            k={
+              r.foundation.type === "strip"
+                ? "Нагрузка на 1 пог.м"
+                : "Нагрузка на фундамент"
+            }
+            v={`${n0(r.foundation.loadKnM)} ${r.foundation.type === "strip" ? "кН/м" : "кН"}`}
           />
+          <Row k="Грунт" v={`${r.foundation.soilName}`} />
           <Row
             k="R грунта"
             v={`${r.foundation.soilResistanceKpa} кПа (${r.foundation.soilRange})`}
           />
           <Row
-            k="Сечение ленты"
-            v={`${r.foundation.widthMm}×${r.foundation.heightMm} мм`}
+            k={r.foundation.type === "strip" ? "Сечение ленты" : "Плита"}
+            v={
+              r.foundation.type === "strip"
+                ? `${r.foundation.widthMm}×${r.foundation.heightMm} мм`
+                : `${r.foundation.widthMm}×${r.foundation.widthMm}×${r.foundation.heightMm} мм`
+            }
           />
           <Row
             k="Глубина заложения"
@@ -144,9 +165,17 @@ export function StructuralTab() {
           <Row k="Бетон" v={r.foundation.concrete} />
           <Row
             k="Объём бетона"
-            v={`${n1(r.foundation.volumeM3)} м³ · лента ${n0(r.foundation.lengthM)} пог.м`}
+            v={
+              r.foundation.type === "strip"
+                ? `${n1(r.foundation.volumeM3)} м³ · лента ${n0(r.foundation.lengthM)} пог.м`
+                : `${n1(r.foundation.volumeM3)} м³ · ${r.foundation.count} шт`
+            }
           />
-          <footer>B = N / (R · (1 − 0,1·h)) · мин. 400 мм, кратно 100 мм</footer>
+          <footer>
+            {r.foundation.type === "strip"
+              ? "B = N / (R · (1 − 0,1·h)) · мин. 400 мм, кратно 100 мм"
+              : "a = √(N / (R · (1 − 0,1·h))) · мин. 800 мм, кратно 100 мм"}
+          </footer>
         </section>
       </div>
       <div className="summary-grid">

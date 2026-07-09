@@ -10,6 +10,10 @@ export const defaultStructural: StructuralSettings = {
   columnStep: 6000,
   soilId: "auto",
   foundationDepth: 1500,
+  purlinProfile: "auto",
+  columnType: "i-beam",
+  columnSection: "auto",
+  foundationType: "strip",
 };
 export const defaultCommercial: CommercialInfo = {
   objectName: "",
@@ -18,9 +22,8 @@ export const defaultCommercial: CommercialInfo = {
   contact: "",
   managerName: "Муратбеков Эркин",
   managerPhone: "+996 755 405 666",
-  factoryName: "Завод БИАСТ",
-  factoryAddress:
-    "Кыргызстан, г. Бишкек, с. Лебединовка, проспект Ленина, 312",
+  factoryName: "Завод в FreeLAB",
+  factoryAddress: "Кыргызстан, г. Бишкек, Кок-Жар",
 };
 export const defaultProject: ProjectInput = {
   building: { length: 12000, width: 8000, wallHeight: 4000 },

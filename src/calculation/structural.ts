@@ -9,6 +9,8 @@ import {
 } from "../domain/regions";
 import type {
   BuildingDimensions,
+  ColumnType,
+  FoundationType,
   RoofSettings,
   StructuralSettings,
 } from "../domain/types";
@@ -62,6 +64,70 @@ const WEB_TUBES: TubeProfile[] = [
   { name: "□80×80×4", areaCm2: 11.75, massKgM: 9.22 },
 ];
 
+/** Сечения колонн по типам: площадь, минимальный радиус инерции, масса.
+ *  Двутавры — колонные серии К (СТО АСЧМ 20-93), трубы — ГОСТ 30245,
+ *  сквозные — 2 швеллера по ГОСТ 8240 (гибкость по материальной оси). */
+export interface ColumnSection {
+  name: string;
+  areaCm2: number;
+  iMinCm: number;
+  massKgM: number;
+}
+export const COLUMN_SECTIONS: Record<ColumnType, ColumnSection[]> = {
+  "i-beam": [
+    { name: "20К1", areaCm2: 52.7, iMinCm: 5.02, massKgM: 41.4 },
+    { name: "25К1", areaCm2: 72.4, iMinCm: 6.3, massKgM: 56.8 },
+    { name: "30К1", areaCm2: 110.8, iMinCm: 7.54, massKgM: 87.0 },
+    { name: "35К1", areaCm2: 139.7, iMinCm: 8.78, massKgM: 109.7 },
+    { name: "40К1", areaCm2: 186.8, iMinCm: 10.06, massKgM: 146.6 },
+  ],
+  tube: [
+    { name: "□140×140×6", areaCm2: 32.2, iMinCm: 5.44, massKgM: 25.3 },
+    { name: "□160×160×8", areaCm2: 46.5, iMinCm: 6.12, massKgM: 36.5 },
+    { name: "□180×180×8", areaCm2: 53.0, iMinCm: 6.95, massKgM: 41.6 },
+    { name: "□200×200×10", areaCm2: 74.6, iMinCm: 7.63, massKgM: 58.5 },
+    { name: "□220×220×10", areaCm2: 82.6, iMinCm: 8.45, massKgM: 64.8 },
+    { name: "□250×250×12", areaCm2: 111.7, iMinCm: 9.53, massKgM: 87.7 },
+    { name: "□300×300×12", areaCm2: 135.7, iMinCm: 11.6, massKgM: 106.5 },
+  ],
+  "double-channel": [
+    { name: "2×[12", areaCm2: 26.6, iMinCm: 4.78, massKgM: 20.8 },
+    { name: "2×[14", areaCm2: 31.2, iMinCm: 5.6, massKgM: 24.6 },
+    { name: "2×[16", areaCm2: 36.2, iMinCm: 6.42, massKgM: 28.4 },
+    { name: "2×[18", areaCm2: 41.4, iMinCm: 7.24, massKgM: 32.6 },
+    { name: "2×[20", areaCm2: 46.8, iMinCm: 8.07, massKgM: 36.8 },
+    { name: "2×[24", areaCm2: 61.2, iMinCm: 9.73, massKgM: 48.0 },
+  ],
+};
+export const COLUMN_TYPE_LABELS: Record<ColumnType, string> = {
+  "i-beam": "Двутавр (колонный, серия К)",
+  tube: "Профильная труба",
+  "double-channel": "Сквозная — 2 швеллера",
+};
+/** Коэффициент продольного изгиба φ для стали С245 (СП 16.13330, табл. Д.1) */
+export function buckling(lambda: number): number {
+  const table: [number, number][] = [
+    [0, 1],
+    [40, 0.89],
+    [60, 0.805],
+    [80, 0.686],
+    [100, 0.542],
+    [120, 0.419],
+    [140, 0.315],
+    [160, 0.244],
+    [200, 0.16],
+  ];
+  if (lambda <= 0) return 1;
+  const last = table[table.length - 1];
+  if (lambda >= last[0]) return last[1];
+  for (let i = 1; i < table.length; i++) {
+    const [l1, p1] = table[i - 1];
+    const [l2, p2] = table[i];
+    if (lambda <= l2) return p1 + ((p2 - p1) * (lambda - l1)) / (l2 - l1);
+  }
+  return last[1];
+}
+
 /** Рекомендации по колоннам: высота, предельная нагрузка, сечения */
 interface ColumnRow {
   heightMax: number;
@@ -106,6 +172,7 @@ export interface StructuralLoads {
 }
 export interface PurlinResult {
   ok: boolean;
+  manual: boolean;
   profile: string;
   stepM: number;
   spanM: number;
@@ -139,25 +206,38 @@ export interface ColumnResult {
   ok: boolean;
   heightM: number;
   loadKn: number;
+  /** Подобранное конкретное сечение */
+  section: string;
+  sectionType: ColumnType;
+  manual: boolean;
+  lambda: number;
+  phi: number;
+  usage: number;
+  massKgM: number;
+  count: number;
+  /** Аналоги из укрупнённой таблицы для сравнения */
   iBeam: string;
   tube: string;
   doubleChannel: string;
   note: string;
-  usage: number;
-  count: number;
 }
 export interface FoundationResult {
+  type: FoundationType;
+  /** Лента: кН/м; столбчатый: кН на один фундамент */
   loadKnM: number;
   soilName: string;
   soilResistanceKpa: number;
   soilRange: string;
+  /** Лента: ширина подошвы; столбчатый: сторона плиты */
   widthMm: number;
   heightMm: number;
   depthMm: number;
   mainRebar: string;
   stirrups: string;
   concrete: string;
+  /** Лента: длина, пог.м; столбчатый: количество, шт */
   lengthM: number;
+  count: number;
   volumeM3: number;
 }
 export interface StructuralResult {
@@ -194,9 +274,12 @@ function selectPurlin(
   slopeLengthM: number,
   slopes: number,
   baysCount: number,
+  manualProfile: string,
 ): PurlinResult {
+  const manual = PURLIN_PROFILES.find((p) => p.name === manualProfile);
+  const candidates = manual ? [manual] : PURLIN_PROFILES;
   let best: PurlinResult | undefined;
-  for (const profile of PURLIN_PROFILES) {
+  for (const profile of candidates) {
     for (const stepM of PURLIN_STEPS) {
       const qKgM = loadKgM2 * stepM + profile.massKgM;
       const { stressUsage, deflectionUsage } = checkPurlin(
@@ -211,6 +294,7 @@ function selectPurlin(
       const totalMassKg = totalLengthM * profile.massKgM;
       const candidate: PurlinResult = {
         ok: true,
+        manual: Boolean(manual),
         profile: profile.name,
         stepM,
         spanM,
@@ -228,7 +312,7 @@ function selectPurlin(
     }
   }
   if (best) return best;
-  const fallback = PURLIN_PROFILES[PURLIN_PROFILES.length - 1];
+  const fallback = manual ?? PURLIN_PROFILES[PURLIN_PROFILES.length - 1];
   const stepM = 0.5;
   const qKgM = loadKgM2 * stepM + fallback.massKgM;
   const { stressUsage, deflectionUsage } = checkPurlin(fallback, qKgM, spanM);
@@ -236,6 +320,7 @@ function selectPurlin(
   const count = linesPerSlope * slopes * baysCount;
   return {
     ok: false,
+    manual: Boolean(manual),
     profile: fallback.name,
     stepM,
     spanM,
@@ -314,42 +399,106 @@ function selectTruss(
   };
 }
 
+/** Проверка центрально-сжатой колонны: N ≤ φ(λ)·A·Ry·γc, μ = 1 */
+function checkColumnSection(
+  section: ColumnSection,
+  heightM: number,
+  loadKn: number,
+) {
+  const lambda = (heightM * 100) / section.iMinCm;
+  const phi = buckling(lambda);
+  const capacityKn = phi * section.areaCm2 * (RY_PA / 1e7);
+  return { lambda, phi, usage: loadKn / capacityKn };
+}
 function selectColumn(
   heightM: number,
   loadKn: number,
   trussCount: number,
+  columnType: ColumnType,
+  manualSection: string,
 ): ColumnResult {
-  let row = COLUMN_TABLE.find(
-    (r) => heightM <= r.heightMax && loadKn <= r.loadMaxKn,
-  );
-  if (!row)
-    row =
-      COLUMN_TABLE.find((r) => loadKn <= r.loadMaxKn) ??
-      COLUMN_TABLE[COLUMN_TABLE.length - 1];
+  const catalog = COLUMN_SECTIONS[columnType];
+  const manual = catalog.find((s) => s.name === manualSection);
+  let picked = manual;
+  let check = manual && checkColumnSection(manual, heightM, loadKn);
+  if (!manual) {
+    for (const section of catalog) {
+      const c = checkColumnSection(section, heightM, loadKn);
+      if (c.usage <= 0.85 && c.lambda <= 140) {
+        picked = section;
+        check = c;
+        break;
+      }
+    }
+    if (!picked) {
+      picked = catalog[catalog.length - 1];
+      check = checkColumnSection(picked, heightM, loadKn);
+    }
+  }
+  const c = check!;
+  // Аналоги из укрупнённой таблицы — для сверки с типовыми решениями
+  const row =
+    COLUMN_TABLE.find((r) => heightM <= r.heightMax && loadKn <= r.loadMaxKn) ??
+    COLUMN_TABLE.find((r) => loadKn <= r.loadMaxKn) ??
+    COLUMN_TABLE[COLUMN_TABLE.length - 1];
   return {
-    ok: loadKn <= row.loadMaxKn && heightM <= 12,
+    ok: c.usage <= 1 && c.lambda <= 150 && heightM <= 12,
     heightM,
     loadKn,
+    section: picked!.name,
+    sectionType: columnType,
+    manual: Boolean(manual),
+    lambda: c.lambda,
+    phi: c.phi,
+    usage: c.usage,
+    massKgM: picked!.massKgM,
+    count: trussCount * 2,
     iBeam: row.iBeam,
     tube: row.tube,
     doubleChannel: row.doubleChannel,
     note: row.note,
-    usage: loadKn / row.loadMaxKn,
-    count: trussCount * 2,
   };
 }
 
 function selectFoundation(
+  type: FoundationType,
   columnLoadKn: number,
   columnStepM: number,
   wallLineKnM: number,
   soil: SoilType,
   depthM: number,
   perimeterM: number,
+  columnCount: number,
 ): FoundationResult {
+  const bearing = soil.resistanceKpa * (1 - 0.1 * depthM);
+  const common = {
+    soilName: soil.name,
+    soilResistanceKpa: soil.resistanceKpa,
+    soilRange: soil.range,
+    depthMm: Math.round(depthM * 1000),
+    stirrups: "Ø8 A240, шаг 200 мм",
+    concrete: "Бетон не ниже B20",
+  };
+  if (type === "pad") {
+    // Столбчатый: квадратная плита под каждую колонну, a = √(N / R′)
+    const rawSide = Math.sqrt(columnLoadKn / bearing);
+    const sideM = Math.max(0.8, Math.ceil(rawSide * 10) / 10);
+    const plateM = sideM <= 1.2 ? 0.3 : sideM <= 1.8 ? 0.4 : 0.5;
+    return {
+      ...common,
+      type,
+      loadKnM: columnLoadKn,
+      widthMm: Math.round(sideM * 1000),
+      heightMm: Math.round(plateM * 1000),
+      mainRebar: `Сетка Ø12 A500, шаг 200 мм (${sideM <= 1.2 ? "1" : "2"} слой)`,
+      lengthM: 0,
+      count: columnCount,
+      volumeM3: sideM * sideM * plateM * columnCount,
+    };
+  }
+  // Лента: B = N / (R × (1 − 0,1·h)) — по схеме расчёта, γср учтён в формуле
   const loadKnM = columnLoadKn / columnStepM + wallLineKnM;
-  // B = N / (R × (1 − 0,1·h)) — по схеме расчёта, γср учтён в формуле
-  const rawWidth = loadKnM / (soil.resistanceKpa * (1 - 0.1 * depthM));
+  const rawWidth = loadKnM / bearing;
   const widthM = Math.max(0.4, Math.ceil(rawWidth * 10) / 10);
   const heightM = Math.min(1.5, Math.max(0.8, depthM));
   const mainRebar =
@@ -361,17 +510,14 @@ function selectFoundation(
           ? "6Ø14 A500"
           : "6Ø16 A500";
   return {
+    ...common,
+    type,
     loadKnM,
-    soilName: soil.name,
-    soilResistanceKpa: soil.resistanceKpa,
-    soilRange: soil.range,
     widthMm: Math.round(widthM * 1000),
     heightMm: Math.round(heightM * 1000),
-    depthMm: Math.round(depthM * 1000),
     mainRebar,
-    stirrups: "Ø8 A240, шаг 200 мм",
-    concrete: "Бетон не ниже B20",
     lengthM: perimeterM,
+    count: 1,
     volumeM3: widthM * heightM * perimeterM,
   };
 }
@@ -424,10 +570,13 @@ export function calculateStructural(
     slopeLengthM,
     slopes,
     baysCount,
+    structural.purlinProfile === "auto" ? "" : structural.purlinProfile,
   );
   if (!purlin.ok)
     warnings.push(
-      "Прогон: сечение не подобрано — уменьшите шаг колонн или толщину покрытия",
+      purlin.manual
+        ? `Прогон ${purlin.profile}: заданный профиль не проходит по прочности/прогибу при шаге ферм ${columnStepM} м`
+        : "Прогон: сечение не подобрано — уменьшите шаг колонн или толщину покрытия",
     );
 
   // Шаг 2. Ферма: нагрузка от покрытия + прогонов, пролёт равен ширине здания
@@ -449,10 +598,22 @@ export function calculateStructural(
 
   // Шаг 3. Колонна: реакция фермы + собственный вес (~2%)
   const columnLoadKn = truss.loadKnM * (widthM / 2) * 1.02;
-  const column = selectColumn(wallM, columnLoadKn, truss.count);
+  const column = selectColumn(
+    wallM,
+    columnLoadKn,
+    truss.count,
+    structural.columnType,
+    structural.columnSection === "auto" ? "" : structural.columnSection,
+  );
   if (!column.ok)
     warnings.push(
-      "Колонна: нагрузка или высота вне табличного диапазона — требуется расчёт по СП 16.13330",
+      column.manual
+        ? `Колонна ${column.section}: не проходит проверку (использование ${Math.round(column.usage * 100)}%, λ = ${Math.round(column.lambda)})`
+        : "Колонна: сечение вне каталога — требуется расчёт по СП 16.13330",
+    );
+  else if (column.lambda > 120)
+    warnings.push(
+      `Колонна: гибкость λ = ${Math.round(column.lambda)} > 120 — рекомендуются распорки или связи`,
     );
 
   // Шаг 4. Ленточный фундамент: колонна + вес стенового ограждения
@@ -466,12 +627,14 @@ export function calculateStructural(
     };
   const wallLineKnM = (panelWeightKgM2(wallThicknessMm) * wallM * G) / 1000;
   const foundation = selectFoundation(
+    structural.foundationType,
     columnLoadKn,
     columnStepM,
     wallLineKnM,
     soil,
     Math.min(2.5, Math.max(0.8, structural.foundationDepth / 1000)),
     2 * (lengthM + widthM),
+    column.count,
   );
   if (region.soil.includes("просадочные") && structural.soilId === "auto")
     warnings.push(
@@ -481,7 +644,7 @@ export function calculateStructural(
   const totalSteelKg =
     purlin.totalMassKg +
     truss.massPerTrussKg * truss.count +
-    column.count * wallM * 35; // ~35 кг/м — усреднённая колонна
+    column.count * wallM * column.massKgM;
 
   return {
     regionName: region.name,

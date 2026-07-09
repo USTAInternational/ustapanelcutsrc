@@ -25,7 +25,15 @@ const KEY = "usta-auth-v1";
 function persisted(): UserProfile | null {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw) as UserProfile;
+    if (raw) {
+      const user = JSON.parse(raw) as UserProfile;
+      // Миграция: завод переехал из БИАСТ в FreeLAB (Кок-Жар)
+      if (user.factoryName === "Завод БИАСТ") {
+        user.factoryName = defaultCommercial.factoryName;
+        user.factoryAddress = defaultCommercial.factoryAddress;
+      }
+      return user;
+    }
   } catch {
     /* нет сохранённого входа */
   }

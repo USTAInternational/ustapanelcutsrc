@@ -28,6 +28,12 @@ const structuralSchema = z
     columnStep: finitePositive.default(defaultStructural.columnStep),
     soilId: z.string().default("auto"),
     foundationDepth: finitePositive.default(defaultStructural.foundationDepth),
+    purlinProfile: z.string().default("auto"),
+    columnType: z
+      .enum(["i-beam", "tube", "double-channel"])
+      .default("i-beam"),
+    columnSection: z.string().default("auto"),
+    foundationType: z.enum(["strip", "pad"]).default("strip"),
   })
   .default(defaultStructural);
 const panel = z

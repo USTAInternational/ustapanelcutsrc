@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { SOIL_TYPES } from "../calculation/structural";
+import {
+  COLUMN_SECTIONS,
+  COLUMN_TYPE_LABELS,
+  PURLIN_PROFILES,
+  SOIL_TYPES,
+} from "../calculation/structural";
+import type { ColumnType, FoundationType } from "../domain/types";
 import { INSULATION_OPTIONS } from "../domain/panelOptions";
 import { RAL_COLORS } from "../domain/ral";
 import { KG_REGIONS, regionById } from "../domain/regions";
@@ -213,10 +219,15 @@ function StructuralForm() {
       "Ферма",
       `H ${r.truss.heightM.toFixed(2)} м, пояс ${r.truss.topChord}`,
     ],
-    ["Колонна", r.column.iBeam],
+    [
+      "Колонна",
+      `${r.column.section} · ${Math.round(r.column.usage * 100)}%`,
+    ],
     [
       "Фундамент",
-      `лента ${r.foundation.widthMm}×${r.foundation.heightMm} мм`,
+      r.foundation.type === "strip"
+        ? `лента ${r.foundation.widthMm}×${r.foundation.heightMm} мм`
+        : `плита ${r.foundation.widthMm}×${r.foundation.widthMm}×${r.foundation.heightMm} мм`,
     ],
   ];
   return (
@@ -230,6 +241,58 @@ function StructuralForm() {
         max={12}
         onChange={(columnStep) => s.patchStructural({ columnStep })}
       />
+      <Select
+        label="Прогон"
+        value={s.structural.purlinProfile}
+        onChange={(purlinProfile) => s.patchStructural({ purlinProfile })}
+      >
+        <option value="auto">Авто — подбор по нагрузке</option>
+        {PURLIN_PROFILES.map((p) => (
+          <option key={p.name} value={p.name}>
+            {p.name} · {p.massKgM} кг/м
+          </option>
+        ))}
+      </Select>
+      <Select
+        label="Тип колонны"
+        value={s.structural.columnType}
+        onChange={(columnType) =>
+          s.patchStructural({
+            columnType: columnType as ColumnType,
+            columnSection: "auto",
+          })
+        }
+      >
+        {(Object.keys(COLUMN_TYPE_LABELS) as ColumnType[]).map((type) => (
+          <option key={type} value={type}>
+            {COLUMN_TYPE_LABELS[type]}
+          </option>
+        ))}
+      </Select>
+      <Select
+        label="Сечение колонны"
+        value={s.structural.columnSection}
+        onChange={(columnSection) => s.patchStructural({ columnSection })}
+      >
+        <option value="auto">Авто — подбор по N и гибкости</option>
+        {COLUMN_SECTIONS[s.structural.columnType].map((section) => (
+          <option key={section.name} value={section.name}>
+            {section.name} · {section.massKgM} кг/м
+          </option>
+        ))}
+      </Select>
+      <Select
+        label="Тип фундамента"
+        value={s.structural.foundationType}
+        onChange={(foundationType) =>
+          s.patchStructural({
+            foundationType: foundationType as FoundationType,
+          })
+        }
+      >
+        <option value="strip">Ленточный по периметру</option>
+        <option value="pad">Столбчатый под колонны</option>
+      </Select>
       <Select
         label="Тип грунта"
         value={s.structural.soilId}
@@ -260,6 +323,8 @@ function StructuralForm() {
       </div>
       <small className="field-hint">
         Подбор идёт сверху вниз: прогон → ферма → колонна → фундамент.
+        «Авто» — расчёт по внешним габаритам; ручной выбор профилей — режим
+        «по существующему каркасу» (лист 1) с проверкой заданных сечений.
         Подробности — на вкладке «Конструкции».
       </small>
     </section>

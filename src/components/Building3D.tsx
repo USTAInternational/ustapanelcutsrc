@@ -1,7 +1,13 @@
 import { Bounds, GizmoHelper, GizmoViewport, Line, OrbitControls } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
-import { useMemo } from "react";
-import { BufferGeometry, DoubleSide, EdgesGeometry, Vector3 } from "three";
+import { useMemo, useState } from "react";
+import {
+  BufferGeometry,
+  DoubleSide,
+  EdgesGeometry,
+  Quaternion,
+  Vector3,
+} from "three";
 import type { Opening, PanelPiece, Point2D, Surface } from "../domain/types";
 import { ralHex } from "../domain/ral";
 import { resolveRoof } from "../geometry/surfaces";
@@ -127,6 +133,220 @@ function OpeningMesh({ opening, mapper }: { opening: Opening; mapper: Mapper }) 
   );
 }
 
+const STEEL = "#8f979f";
+const STEEL_DARK = "#787f87";
+const CONCRETE = "#b9bcbd";
+
+/** Стержень каркаса между двумя точками (визуализация профиля коробкой) */
+function Member({
+  a,
+  b,
+  size = 0.1,
+  color = STEEL,
+}: {
+  a: WorldPoint;
+  b: WorldPoint;
+  size?: number;
+  color?: string;
+}) {
+  const { position, quaternion, length } = useMemo(() => {
+    const start = new Vector3(...a);
+    const end = new Vector3(...b);
+    const direction = end.clone().sub(start);
+    return {
+      position: start.clone().add(end).multiplyScalar(0.5),
+      quaternion: new Quaternion().setFromUnitVectors(
+        new Vector3(0, 1, 0),
+        direction.clone().normalize(),
+      ),
+      length: direction.length(),
+    };
+  }, [a, b]);
+  if (length < 1e-4) return null;
+  return (
+    <mesh position={position} quaternion={quaternion}>
+      <boxGeometry args={[size, length, size]} />
+      <meshStandardMaterial color={color} roughness={0.55} metalness={0.35} />
+    </mesh>
+  );
+}
+
+/** Ферма в плоскости рамы x=const: пояса + треугольная решётка со стойками */
+function TrussAt({
+  x,
+  width,
+  wallHeight,
+  ridgeRise,
+  monoRise,
+  type,
+  lowAtFront,
+}: {
+  x: number;
+  width: number;
+  wallHeight: number;
+  ridgeRise: number;
+  monoRise: number;
+  type: "flat" | "mono" | "gable";
+  lowAtFront: boolean;
+}) {
+  const members: [WorldPoint, WorldPoint, number][] = [];
+  const half = width / 2;
+  const chord = 0.12;
+  const web = 0.07;
+  const topAt = (z: number): number => {
+    if (type === "gable") return wallHeight + ridgeRise * (1 - Math.abs(z) / half);
+    if (type === "mono") {
+      const ratio = (z + half) / width;
+      return wallHeight + monoRise * (lowAtFront ? ratio : 1 - ratio);
+    }
+    return wallHeight;
+  };
+  // Нижний пояс
+  members.push([[x, wallHeight, -half], [x, wallHeight, half], chord]);
+  if (type === "gable") {
+    members.push([[x, wallHeight, -half], [x, wallHeight + ridgeRise, 0], chord]);
+    members.push([[x, wallHeight + ridgeRise, 0], [x, wallHeight, half], chord]);
+  } else if (type === "mono") {
+    members.push([
+      [x, topAt(-half), -half],
+      [x, topAt(half), half],
+      chord,
+    ]);
+  }
+  // Решётка: стойки в узлах + раскосы «ёлочкой» к центру (как на эскизе)
+  if (type !== "flat" && (ridgeRise > 0.05 || monoRise > 0.05)) {
+    const panels = Math.max(4, 2 * Math.round(width / 3));
+    for (let i = 1; i < panels; i++) {
+      const z = -half + (i / panels) * width;
+      members.push([[x, wallHeight, z], [x, topAt(z), z], web]);
+    }
+    for (let i = 0; i < panels; i++) {
+      const z1 = -half + (i / panels) * width;
+      const z2 = -half + ((i + 1) / panels) * width;
+      const towardCenter = (z1 + z2) / 2 <= 0;
+      const [from, to] = towardCenter
+        ? [[x, wallHeight, z1] as WorldPoint, [x, topAt(z2), z2] as WorldPoint]
+        : [[x, wallHeight, z2] as WorldPoint, [x, topAt(z1), z1] as WorldPoint];
+      members.push([from, to, web]);
+    }
+  }
+  return members.map(([a, b, size], i) => (
+    <Member key={i} a={a} b={b} size={size} color={i < 3 ? STEEL : STEEL_DARK} />
+  ));
+}
+
+/** Несущий каркас: колонны, фермы, прогоны и фундамент из результатов подбора */
+function Frame() {
+  const { building, roof: rawRoof, calculation, structural } = useProjectStore();
+  const roof = resolveRoof(building, rawRoof);
+  const result = calculation.structural;
+  const length = toMeters(building.length);
+  const width = toMeters(building.width);
+  const wallHeight = toMeters(building.wallHeight);
+  const ridgeRise = Math.max(0, toMeters(roof.ridgeHeight) - wallHeight);
+  const monoRise = Math.max(0, toMeters(roof.highSideHeight) - wallHeight);
+  const lowAtFront = roof.slopeDirection !== "left-to-right";
+  const bays = Math.max(1, Math.ceil(length / Math.max(0.5, toMeters(structural.columnStep))));
+  const frames = Array.from({ length: bays + 1 }, (_, i) => -length / 2 + (i * length) / bays);
+  const half = width / 2;
+  const columnSize = 0.22;
+  // Прогоны вдоль здания по скатам с шагом из подбора
+  const purlins: { y: number; z: number }[] = [];
+  if (roof.type === "gable" && ridgeRise > 0.01) {
+    const slope = Math.hypot(half, ridgeRise);
+    const lines = Math.max(2, Math.floor(slope / result.purlin.stepM) + 1);
+    for (let i = 0; i <= lines; i++) {
+      const t = Math.min(1, (i * result.purlin.stepM) / slope);
+      for (const side of [-1, 1])
+        purlins.push({ y: wallHeight + ridgeRise * t, z: side * half * (1 - t) });
+    }
+  } else if (roof.type === "mono" && monoRise > 0.01) {
+    const slope = Math.hypot(width, monoRise);
+    const lines = Math.max(2, Math.floor(slope / result.purlin.stepM) + 1);
+    for (let i = 0; i <= lines; i++) {
+      const t = Math.min(1, (i * result.purlin.stepM) / slope);
+      const ratio = lowAtFront ? t : 1 - t;
+      purlins.push({ y: wallHeight + monoRise * ratio, z: -half + width * (lowAtFront ? t : 1 - t) });
+    }
+  } else {
+    const lines = Math.max(2, Math.floor(width / result.purlin.stepM) + 1);
+    for (let i = 0; i <= lines; i++)
+      purlins.push({ y: wallHeight, z: Math.min(half, -half + i * result.purlin.stepM) });
+  }
+  const foundationDepth = toMeters(structural.foundationDepth);
+  const stripWidth = result.foundation.widthMm / 1000;
+  const padSide = result.foundation.widthMm / 1000;
+  const padHeight = result.foundation.heightMm / 1000;
+  return (
+    <group>
+      {frames.map((x) => (
+        <group key={x}>
+          {[-half, half].map((z) => (
+            <group key={z}>
+              <Member
+                a={[x, 0, z]}
+                b={[x, wallHeight, z]}
+                size={columnSize}
+                color={STEEL}
+              />
+              {/* Опорная плита базы колонны */}
+              <mesh position={[x, 0.015, z]}>
+                <boxGeometry args={[columnSize * 2.2, 0.03, columnSize * 2.2]} />
+                <meshStandardMaterial color={STEEL_DARK} />
+              </mesh>
+              {structural.foundationType === "pad" && (
+                <mesh position={[x, -padHeight / 2 - 0.02, z]}>
+                  <boxGeometry args={[padSide, padHeight, padSide]} />
+                  <meshStandardMaterial color={CONCRETE} roughness={0.9} />
+                </mesh>
+              )}
+            </group>
+          ))}
+          <TrussAt
+            x={x}
+            width={width}
+            wallHeight={wallHeight}
+            ridgeRise={ridgeRise}
+            monoRise={monoRise}
+            type={roof.type}
+            lowAtFront={lowAtFront}
+          />
+        </group>
+      ))}
+      {purlins.map((p, i) => (
+        <Member
+          key={`purlin-${i}`}
+          a={[-length / 2, p.y + 0.09, p.z]}
+          b={[length / 2, p.y + 0.09, p.z]}
+          size={0.08}
+          color={STEEL_DARK}
+        />
+      ))}
+      {structural.foundationType === "strip" && (
+        <group>
+          {/* Лента по периметру: видимый цоколь + заглублённая часть */}
+          {[
+            { pos: [0, 0, -half] as WorldPoint, args: [length + stripWidth, 0, stripWidth] },
+            { pos: [0, 0, half] as WorldPoint, args: [length + stripWidth, 0, stripWidth] },
+            { pos: [-length / 2, 0, 0] as WorldPoint, args: [stripWidth, 0, width - stripWidth] },
+            { pos: [length / 2, 0, 0] as WorldPoint, args: [stripWidth, 0, width - stripWidth] },
+          ].map((strip, i) => (
+            <mesh
+              key={i}
+              position={[strip.pos[0], -foundationDepth / 2 + 0.15, strip.pos[2]]}
+            >
+              <boxGeometry
+                args={[strip.args[0], foundationDepth + 0.3, strip.args[2]]}
+              />
+              <meshStandardMaterial color={CONCRETE} roughness={0.9} />
+            </mesh>
+          ))}
+        </group>
+      )}
+    </group>
+  );
+}
+
 function Model() {
   const { building, roof: rawRoof, calculation, selectedSurfaceId, selectedPanelId, wallPanelSystem, roofPanelSystem, openings } = useProjectStore();
   const roof = resolveRoof(building, rawRoof);
@@ -217,15 +437,39 @@ function Model() {
   );
 }
 
+type ViewMode = "both" | "panels" | "frame";
+const VIEW_MODES: { id: ViewMode; label: string }[] = [
+  { id: "both", label: "Всё" },
+  { id: "panels", label: "Панели" },
+  { id: "frame", label: "Каркас" },
+];
 export function Building3D() {
+  const [mode, setMode] = useState<ViewMode>("both");
   return (
     <div className="three-view">
+      <div className="drawing-tools view-mode-tools">
+        {VIEW_MODES.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            className={mode === v.id ? "active" : ""}
+            onClick={() => setMode(v.id)}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
       <Canvas camera={{ position: [14, 10, 14], fov: 42 }}>
         <color attach="background" args={["#eef2f5"]} />
         <ambientLight intensity={1.25} />
         <directionalLight position={[8, 14, 8]} intensity={1.8} castShadow />
         <gridHelper args={[50, 50, "#9aa9b5", "#d3dbe1"]} />
-        <Bounds fit clip observe margin={1.25}><Model /></Bounds>
+        <Bounds fit clip observe margin={1.25}>
+          <group>
+            {mode !== "frame" && <Model />}
+            {mode !== "panels" && <Frame />}
+          </group>
+        </Bounds>
         <OrbitControls makeDefault target={[0, 2, 0]} />
         <GizmoHelper alignment="bottom-right" margin={[70, 70]}><GizmoViewport /></GizmoHelper>
       </Canvas>

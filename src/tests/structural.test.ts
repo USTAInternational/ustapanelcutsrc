@@ -18,7 +18,7 @@ const base = () =>
     { ...defaultProject.roof, type: "gable", inputMode: "height", ridgeHeight: 7000 },
     100,
     100,
-    { regionId: "bishkek", columnStep: 6000, soilId: "auto", foundationDepth: 1500 },
+    { ...defaultProject.structural, regionId: "bishkek" },
   );
 
 describe("регионы", () => {
@@ -53,7 +53,7 @@ describe("каскад конструкций", () => {
       { ...defaultProject.roof, type: "gable", inputMode: "height", ridgeHeight: 8500 },
       100,
       150,
-      { regionId: "bishkek", columnStep: 6000, soilId: "auto", foundationDepth: 1500 },
+      { ...defaultProject.structural, regionId: "bishkek" },
     );
     expect(wide.truss.heightM).toBeCloseTo(18 / 6.5, 1);
   });
@@ -67,11 +67,46 @@ describe("каскад конструкций", () => {
       1,
     );
   });
-  it("колонна подбирается по таблице высота/нагрузка", () => {
+  it("колонна: подобрано конкретное сечение с проверкой по гибкости", () => {
     const r = base();
     expect(r.column.ok).toBe(true);
-    expect(r.column.iBeam.length).toBeGreaterThan(0);
+    expect(r.column.section.length).toBeGreaterThan(0);
+    expect(r.column.usage).toBeLessThanOrEqual(0.85);
+    expect(r.column.lambda).toBeLessThanOrEqual(140);
+    expect(r.column.phi).toBeGreaterThan(0);
+    expect(r.column.phi).toBeLessThanOrEqual(1);
     expect(r.column.count).toBe(r.truss.count * 2);
+  });
+  it("вариативность: ручной выбор сечения колонны и профиля прогона", () => {
+    const manual = calculateStructural(
+      { length: 24000, width: 12000, wallHeight: 5000 },
+      { ...defaultProject.roof, type: "gable", inputMode: "height", ridgeHeight: 7000 },
+      100,
+      100,
+      {
+        ...defaultProject.structural,
+        columnType: "tube",
+        columnSection: "□200×200×10",
+        purlinProfile: "Швеллер 20",
+      },
+    );
+    expect(manual.column.section).toBe("□200×200×10");
+    expect(manual.column.manual).toBe(true);
+    expect(manual.purlin.profile).toBe("Швеллер 20");
+    expect(manual.purlin.manual).toBe(true);
+  });
+  it("столбчатый фундамент: плита под колонну по √(N/R′)", () => {
+    const pad = calculateStructural(
+      { length: 24000, width: 12000, wallHeight: 5000 },
+      { ...defaultProject.roof, type: "gable", inputMode: "height", ridgeHeight: 7000 },
+      100,
+      100,
+      { ...defaultProject.structural, foundationType: "pad" },
+    );
+    expect(pad.foundation.type).toBe("pad");
+    expect(pad.foundation.widthMm).toBeGreaterThanOrEqual(800);
+    expect(pad.foundation.widthMm % 100).toBe(0);
+    expect(pad.foundation.count).toBe(pad.column.count);
   });
   it("фундамент: ширина по формуле, не менее 400 мм и кратно 100", () => {
     const r = base();
@@ -94,7 +129,7 @@ describe("каскад конструкций", () => {
       { ...defaultProject.roof, type: "gable", inputMode: "height", ridgeHeight: 7000 },
       100,
       100,
-      { regionId: "issyk-kul", columnStep: 6000, soilId: "auto", foundationDepth: 1500 },
+      { ...defaultProject.structural, regionId: "issyk-kul" },
     );
     expect(issykKul.loads.snowKgM2).toBeGreaterThan(bishkek.loads.snowKgM2);
     expect(issykKul.truss.loadKnM).toBeGreaterThan(bishkek.truss.loadKnM);

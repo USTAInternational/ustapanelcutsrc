@@ -105,3 +105,7 @@ h3{color:#334155}
 .usage-bad{background:#fee2e2;color:#b91c1c}
 /* Градиент шапки не должен красить header внутри карточек */
 .struct-card>header{background:none;color:inherit}
+.view-mode-tools{gap:0;padding:4px;overflow:hidden}
+.view-mode-tools button{border:0;border-radius:5px}
+.view-mode-tools .active{background:var(--usta-accent);color:#fff}
+.three-view{position:relative}
