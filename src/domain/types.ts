@@ -5,6 +5,7 @@ export type LayoutAlignment = "start" | "end" | "center" | "manual";
 export type SurfaceType = "wall" | "gable-wall" | "roof";
 export type PricingMode = "visible-area" | "blank-area" | "nominal-area";
 export type InsulationType = "eps" | "basalt" | "pir";
+export type PanelSeries = "wall-z-lock" | "wall-secret-fix" | "roof-tsp";
 export interface Point2D {
   x: number;
   y: number;
@@ -25,6 +26,7 @@ export interface RoofSettings {
   gableOverhang: number;
 }
 export interface PanelSystem {
+  series: PanelSeries;
   thickness: number;
   ralColor: string;
   insulation: InsulationType;
@@ -106,11 +108,15 @@ export interface GroupedPanel {
 export interface CalculationSettings {
   reservePercent: number;
   pricingMode: PricingMode;
+  quickMode: boolean;
   subtractOpenings: boolean;
   showWaste: boolean;
   groupPanels: boolean;
   groupMirrored: boolean;
   rounding: number;
+  mountingGapMm: number;
+  thermalGapMm: number;
+  openingClearanceMm: number;
   wallPricePerM2: number;
   roofPricePerM2: number;
   ridgePricePerM: number;
@@ -127,6 +133,43 @@ export interface CalculationSettings {
   productivityPerDay: number;
   transportDistanceKm: number;
   transportRatePerKm: number;
+  craneShifts: number;
+  craneShiftPrice: number;
+  scaffoldPricePerM2: number;
+  weatherRiskPercent: number;
+}
+export type ColumnType = "i-beam" | "tube" | "double-channel";
+export type FoundationType = "strip" | "pad";
+export interface StructuralSettings {
+  /** Регион объекта — определяет снег, ветер, грунты и транспортное плечо */
+  regionId: string;
+  /** Шаг колонн / ферм вдоль здания, мм */
+  columnStep: number;
+  /** Тип грунта: "auto" — по региону, иначе id из SOIL_TYPES */
+  soilId: string;
+  /** Глубина заложения фундамента, мм */
+  foundationDepth: number;
+  /** Монтажный вынос наружной плоскости панели от оси каркаса, мм */
+  panelOffsetMm: number;
+  /** Вентиляционный зазор/подсистема за облицовкой, мм */
+  facadeVentGapMm: number;
+  /** Шаг стеновых ригелей/прогонов под панели, мм */
+  wallGirtStep: number;
+  /** Профиль прогона: "auto" — подбор, иначе имя из сортамента
+   *  (ручной выбор = режим «по существующему каркасу» из листа 1) */
+  purlinProfile: string;
+  /** Тип сечения колонны (лист 1: двутавр / проф. труба / 2 швеллера) */
+  columnType: ColumnType;
+  /** Сечение колонны: "auto" — подбор, иначе имя из каталога типа */
+  columnSection: string;
+  /** Тип фундамента: ленточный или столбчатый под колонны */
+  foundationType: FoundationType;
+  foundationConcreteClass: string;
+  foundationRebarClass: "A400" | "A500C";
+  foundationMainRebarDiameterMm: number;
+  foundationStirrupDiameterMm: number;
+  foundationRebarStepMm: number;
+  foundationCoverMm: number;
 }
 export interface CommercialInfo {
   objectName: string;
@@ -179,6 +222,7 @@ export interface ProjectInput {
   openings: Opening[];
   calculationSettings: CalculationSettings;
   commercial: CommercialInfo;
+  structural: StructuralSettings;
 }
 export interface ProjectSummary {
   wallArea: number;
@@ -203,6 +247,7 @@ export interface ProjectCalculation {
   groups: GroupedPanel[];
   warnings: CalculationWarning[];
   summary: ProjectSummary;
+  structural: import("../calculation/structural").StructuralResult;
 }
 export interface SavedProject extends ProjectInput {
   formatVersion: 1;

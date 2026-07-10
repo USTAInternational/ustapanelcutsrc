@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { RAL_COLORS } from "../domain/ral";
-import { defaultCommercial } from "../domain/defaultProject";
+import {
+  defaultCommercial,
+  defaultStructural,
+} from "../domain/defaultProject";
+import { KG_REGIONS } from "../domain/regions";
 const finitePositive = z.number().finite().positive(),
   nonnegative = z.number().finite().nonnegative();
 const commercialSchema = z
@@ -15,8 +19,35 @@ const commercialSchema = z
     factoryAddress: z.string().default(""),
   })
   .default(defaultCommercial);
+const structuralSchema = z
+  .object({
+    regionId: z
+      .string()
+      .refine((id) => KG_REGIONS.some((r) => r.id === id), "Неизвестный регион")
+      .default(defaultStructural.regionId),
+    columnStep: finitePositive.default(defaultStructural.columnStep),
+    soilId: z.string().default("auto"),
+    foundationDepth: finitePositive.default(defaultStructural.foundationDepth),
+    panelOffsetMm: nonnegative.default(defaultStructural.panelOffsetMm),
+    facadeVentGapMm: nonnegative.default(defaultStructural.facadeVentGapMm),
+    wallGirtStep: finitePositive.default(defaultStructural.wallGirtStep),
+    purlinProfile: z.string().default("auto"),
+    columnType: z
+      .enum(["i-beam", "tube", "double-channel"])
+      .default("i-beam"),
+    columnSection: z.string().default("auto"),
+    foundationType: z.enum(["strip", "pad"]).default("strip"),
+    foundationConcreteClass: z.string().min(1).default(defaultStructural.foundationConcreteClass),
+    foundationRebarClass: z.enum(["A400", "A500C"]).default("A500C"),
+    foundationMainRebarDiameterMm: finitePositive.default(defaultStructural.foundationMainRebarDiameterMm),
+    foundationStirrupDiameterMm: finitePositive.default(defaultStructural.foundationStirrupDiameterMm),
+    foundationRebarStepMm: finitePositive.default(defaultStructural.foundationRebarStepMm),
+    foundationCoverMm: finitePositive.default(defaultStructural.foundationCoverMm),
+  })
+  .default(defaultStructural);
 const panel = z
   .object({
+    series: z.enum(["wall-z-lock", "wall-secret-fix", "roof-tsp"]),
     thickness: finitePositive,
     ralColor: z.string().refine(
       (code) => RAL_COLORS.some((color) => color.code === code),
@@ -76,11 +107,15 @@ export const projectSchema = z
     calculationSettings: z.object({
       reservePercent: nonnegative,
       pricingMode: z.enum(["visible-area", "blank-area", "nominal-area"]),
+      quickMode: z.boolean().default(false),
       subtractOpenings: z.boolean(),
       showWaste: z.boolean(),
       groupPanels: z.boolean(),
       groupMirrored: z.boolean(),
       rounding: finitePositive,
+      mountingGapMm: nonnegative.default(0),
+      thermalGapMm: nonnegative.default(0),
+      openingClearanceMm: nonnegative.default(0),
       wallPricePerM2: nonnegative,
       roofPricePerM2: nonnegative,
       ridgePricePerM: nonnegative,
@@ -97,8 +132,13 @@ export const projectSchema = z
       productivityPerDay: finitePositive.default(80),
       transportDistanceKm: nonnegative.default(0),
       transportRatePerKm: nonnegative.default(0),
+      craneShifts: nonnegative.default(0),
+      craneShiftPrice: nonnegative.default(0),
+      scaffoldPricePerM2: nonnegative.default(0),
+      weatherRiskPercent: nonnegative.default(0),
     }),
     commercial: commercialSchema,
+    structural: structuralSchema,
   })
   .superRefine((v, c) => {
     if (

@@ -1,6 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { INSULATION_OPTIONS } from "../domain/panelOptions";
+import {
+  COLUMN_SECTIONS,
+  COLUMN_TYPE_LABELS,
+  PURLIN_PROFILES,
+  SOIL_TYPES,
+} from "../calculation/structural";
+import type { ColumnType, FoundationType } from "../domain/types";
+import { defaultProject } from "../domain/defaultProject";
+import {
+  INSULATION_OPTIONS,
+  PANEL_SERIES_OPTIONS,
+  panelSeriesDefaults,
+} from "../domain/panelOptions";
+import { importPriceSheet } from "../domain/priceImport";
+import { PROJECT_TEMPLATES } from "../domain/projectTemplates";
 import { RAL_COLORS } from "../domain/ral";
+import { KG_REGIONS, regionById } from "../domain/regions";
 import type { Opening } from "../domain/types";
 import { resolveRoof } from "../geometry/surfaces";
 import { useProjectStore } from "../store/projectStore";
@@ -151,10 +166,303 @@ function RalPalette({ value, onChange }: { value: string; onChange: (value: stri
     </div>
   );
 }
+// Паспорт объекта заполняется в самом начале: геометка (регион) сразу
+// определяет снеговую и ветровую нагрузки и транспортное плечо доставки.
+function ObjectForm() {
+  const s = useProjectStore();
+  const region = regionById(s.structural.regionId);
+  const [templateId, setTemplateId] = useState(PROJECT_TEMPLATES[0]?.id ?? "");
+  return (
+    <section className="object-section">
+      <h3>Объект</h3>
+      <Select
+        label="Типовой шаблон"
+        value={templateId}
+        onChange={setTemplateId}
+      >
+        {PROJECT_TEMPLATES.map((template) => (
+          <option key={template.id} value={template.id}>
+            {template.label}
+          </option>
+        ))}
+      </Select>
+      <button
+        type="button"
+        onClick={() => {
+          const template = PROJECT_TEMPLATES.find((item) => item.id === templateId);
+          if (!template) return;
+          s.replaceProject({
+            ...defaultProject,
+            ...template.data,
+            building: { ...defaultProject.building, ...template.data.building },
+            roof: { ...defaultProject.roof, ...template.data.roof },
+            commercial: { ...defaultProject.commercial, ...template.data.commercial },
+            openings: template.data.openings ?? [],
+          });
+        }}
+      >
+        Загрузить шаблон
+      </button>
+      <Text
+        label="Название объекта"
+        value={s.commercial.objectName}
+        placeholder="Напр.: Ангар 24×48 м"
+        onChange={(objectName) => s.patchCommercial({ objectName })}
+      />
+      <Select
+        label="Регион (локация)"
+        value={s.structural.regionId}
+        onChange={(regionId) => s.setRegion(regionId)}
+      >
+        {KG_REGIONS.map((r) => (
+          <option key={r.id} value={r.id}>
+            {r.name}
+          </option>
+        ))}
+      </Select>
+      <small className="field-hint region-hint">
+        Снег {region.snowDistrict} район · Sg {region.snowLoadKpa} кПа · ветер{" "}
+        {region.windDistrict} район · доставка ~{region.transportKm} км
+      </small>
+      <Text
+        label="Адрес объекта"
+        value={s.commercial.objectAddress}
+        placeholder="Город, улица, ориентир"
+        onChange={(objectAddress) => s.patchCommercial({ objectAddress })}
+      />
+      <Text
+        label="Заказчик"
+        value={s.commercial.customer}
+        placeholder="ФИО или ОсОО"
+        onChange={(customer) => s.patchCommercial({ customer })}
+      />
+      <Text
+        label="Контакт"
+        value={s.commercial.contact}
+        placeholder="+996 ..."
+        onChange={(contact) => s.patchCommercial({ contact })}
+      />
+    </section>
+  );
+}
+// Лист «2. Конструкции»: входы каскада и краткий результат подбора.
+function StructuralForm() {
+  const s = useProjectStore();
+  const r = s.calculation.structural;
+  const rows: [string, string][] = [
+    ["Стеновой ригель", `${r.wallGirt.profile}, шаг ${r.wallGirt.stepM} м`],
+    ["Прогон", `${r.purlin.profile}, шаг ${r.purlin.stepM} м`],
+    [
+      "Ферма",
+      `H ${r.truss.heightM.toFixed(2)} м, пояс ${r.truss.topChord}`,
+    ],
+    [
+      "Колонна",
+      `${r.column.section} · ${Math.round(r.column.usage * 100)}%`,
+    ],
+    [
+      "Фундамент",
+      r.foundation.type === "strip"
+        ? `лента ${r.foundation.widthMm}×${r.foundation.heightMm} мм`
+        : `плита ${r.foundation.widthMm}×${r.foundation.widthMm}×${r.foundation.heightMm} мм`,
+    ],
+  ];
+  return (
+    <section>
+      <h3>Конструкции</h3>
+      <Num
+        label="Шаг колонн / ферм"
+        value={s.structural.columnStep}
+        step={0.5}
+        min={2}
+        max={12}
+        onChange={(columnStep) => s.patchStructural({ columnStep })}
+      />
+      <Select
+        label="Прогон"
+        value={s.structural.purlinProfile}
+        onChange={(purlinProfile) => s.patchStructural({ purlinProfile })}
+      >
+        <option value="auto">Авто — подбор по нагрузке</option>
+        {PURLIN_PROFILES.map((p) => (
+          <option key={p.name} value={p.name}>
+            {p.name} · {p.massKgM} кг/м
+          </option>
+        ))}
+      </Select>
+      <Select
+        label="Тип колонны"
+        value={s.structural.columnType}
+        onChange={(columnType) =>
+          s.patchStructural({
+            columnType: columnType as ColumnType,
+            columnSection: "auto",
+          })
+        }
+      >
+        {(Object.keys(COLUMN_TYPE_LABELS) as ColumnType[]).map((type) => (
+          <option key={type} value={type}>
+            {COLUMN_TYPE_LABELS[type]}
+          </option>
+        ))}
+      </Select>
+      <Select
+        label="Сечение колонны"
+        value={s.structural.columnSection}
+        onChange={(columnSection) => s.patchStructural({ columnSection })}
+      >
+        <option value="auto">Авто — подбор по N и гибкости</option>
+        {COLUMN_SECTIONS[s.structural.columnType].map((section) => (
+          <option key={section.name} value={section.name}>
+            {section.name} · {section.massKgM} кг/м
+          </option>
+        ))}
+      </Select>
+      <Select
+        label="Тип фундамента"
+        value={s.structural.foundationType}
+        onChange={(foundationType) =>
+          s.patchStructural({
+            foundationType: foundationType as FoundationType,
+          })
+        }
+      >
+        <option value="strip">Ленточный по периметру</option>
+        <option value="pad">Столбчатый под колонны</option>
+      </Select>
+      <Select
+        label="Тип грунта"
+        value={s.structural.soilId}
+        onChange={(soilId) => s.patchStructural({ soilId })}
+      >
+        <option value="auto">Авто — по региону</option>
+        {SOIL_TYPES.map((soil) => (
+          <option key={soil.id} value={soil.id}>
+            {soil.name} · R {soil.range} кПа
+          </option>
+        ))}
+      </Select>
+      <Num
+        label="Глубина заложения"
+        value={s.structural.foundationDepth}
+        step={0.1}
+        min={0.8}
+        max={2.5}
+        onChange={(foundationDepth) => s.patchStructural({ foundationDepth })}
+      />
+      <Text
+        label="Класс бетона фундамента"
+        value={s.structural.foundationConcreteClass}
+        onChange={(foundationConcreteClass) =>
+          s.patchStructural({ foundationConcreteClass })
+        }
+      />
+      <Select
+        label="Класс рабочей арматуры"
+        value={s.structural.foundationRebarClass}
+        onChange={(foundationRebarClass) =>
+          s.patchStructural({
+            foundationRebarClass:
+              foundationRebarClass as typeof s.structural.foundationRebarClass,
+          })
+        }
+      >
+        <option value="A500C">A500C</option>
+        <option value="A400">A400</option>
+      </Select>
+      <Num
+        label="Диаметр рабочей арматуры"
+        value={s.structural.foundationMainRebarDiameterMm}
+        unit="мм"
+        step={2}
+        min={8}
+        max={32}
+        onChange={(foundationMainRebarDiameterMm) =>
+          s.patchStructural({ foundationMainRebarDiameterMm })
+        }
+      />
+      <Num
+        label="Диаметр хомутов"
+        value={s.structural.foundationStirrupDiameterMm}
+        unit="мм"
+        step={2}
+        min={6}
+        max={16}
+        onChange={(foundationStirrupDiameterMm) =>
+          s.patchStructural({ foundationStirrupDiameterMm })
+        }
+      />
+      <Num
+        label="Шаг арматуры / хомутов"
+        value={s.structural.foundationRebarStepMm}
+        unit="мм"
+        step={25}
+        min={100}
+        max={400}
+        onChange={(foundationRebarStepMm) =>
+          s.patchStructural({ foundationRebarStepMm })
+        }
+      />
+      <Num
+        label="Защитный слой бетона"
+        value={s.structural.foundationCoverMm}
+        unit="мм"
+        step={5}
+        min={30}
+        max={100}
+        onChange={(foundationCoverMm) =>
+          s.patchStructural({ foundationCoverMm })
+        }
+      />
+      <Num
+        label="Вынос панелей от каркаса"
+        value={s.structural.panelOffsetMm}
+        unit="мм"
+        step={10}
+        min={0}
+        max={300}
+        onChange={(panelOffsetMm) => s.patchStructural({ panelOffsetMm })}
+      />
+      <Num
+        label="Вентзазор / подсистема"
+        value={s.structural.facadeVentGapMm}
+        unit="мм"
+        step={10}
+        min={0}
+        max={120}
+        onChange={(facadeVentGapMm) => s.patchStructural({ facadeVentGapMm })}
+      />
+      <Num
+        label="Шаг стеновых ригелей"
+        value={s.structural.wallGirtStep}
+        step={0.1}
+        min={0.5}
+        max={3}
+        onChange={(wallGirtStep) => s.patchStructural({ wallGirtStep })}
+      />
+      <div className="struct-mini">
+        {rows.map(([k, v]) => (
+          <div className="struct-mini-row" key={k}>
+            <span>{k}</span>
+            <strong>{v}</strong>
+          </div>
+        ))}
+      </div>
+      <small className="field-hint">
+        Подбор идёт сверху вниз: прогон → ферма → колонна → фундамент.
+        «Авто» — расчёт по внешним габаритам; ручной выбор профилей — режим
+        «по существующему каркасу» (лист 1) с проверкой заданных сечений.
+        Подробности — на вкладке «Конструкции».
+      </small>
+    </section>
+  );
+}
 export function ProjectForms() {
   const s = useProjectStore();
+  const priceFile = useRef<HTMLInputElement>(null);
   return (
     <div className="form-stack">
+      <ObjectForm />
       <section>
         <h3>Здание</h3>
         <Num
@@ -252,8 +560,34 @@ export function ProjectForms() {
       <PanelForm kind="wallPanelSystem" title="Стеновые панели" />
       <PanelForm kind="roofPanelSystem" title="Кровельные панели" />
       <OpeningsForm />
+      <StructuralForm />
       <section>
         <h3>Расчет и цены</h3>
+        <button type="button" onClick={() => priceFile.current?.click()}>
+          Загрузить прайс Excel
+        </button>
+        <input
+          ref={priceFile}
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          hidden
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            const patch = await importPriceSheet(file);
+            s.patchSettings(patch);
+          }}
+        />
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={s.calculationSettings.quickMode}
+            onChange={(e) =>
+              s.patchSettings({ quickMode: e.target.checked })
+            }
+          />
+          Быстрый расчет без детальной раскладки
+        </label>
         <Select
           label="Площадь для цены"
           value={s.calculationSettings.pricingMode}
@@ -273,6 +607,35 @@ export function ProjectForms() {
           unit="%"
           step={1}
           onChange={(n) => s.patchSettings({ reservePercent: n })}
+        />
+        <Num
+          label="Монтажный зазор панели"
+          value={s.calculationSettings.mountingGapMm}
+          unit="мм"
+          step={1}
+          min={0}
+          max={50}
+          onChange={(mountingGapMm) => s.patchSettings({ mountingGapMm })}
+        />
+        <Num
+          label="Температурный зазор"
+          value={s.calculationSettings.thermalGapMm}
+          unit="мм"
+          step={1}
+          min={0}
+          max={20}
+          onChange={(thermalGapMm) => s.patchSettings({ thermalGapMm })}
+        />
+        <Num
+          label="Добор вокруг проемов"
+          value={s.calculationSettings.openingClearanceMm}
+          unit="мм"
+          step={5}
+          min={0}
+          max={100}
+          onChange={(openingClearanceMm) =>
+            s.patchSettings({ openingClearanceMm })
+          }
         />
         <Num
           label="Цена стен, сом/м²"
@@ -318,6 +681,9 @@ export function ProjectForms() {
           min={0}
           onChange={(n) => s.patchSettings({ transportDistanceKm: n })}
         />
+        <small className="field-hint">
+          Заполняется автоматически по региону объекта, можно уточнить вручную.
+        </small>
         <Num
           label="Тариф транспорта, сом/км"
           value={s.calculationSettings.transportRatePerKm}
@@ -325,6 +691,43 @@ export function ProjectForms() {
           step={10}
           min={0}
           onChange={(n) => s.patchSettings({ transportRatePerKm: n })}
+        />
+        <Num
+          label="Автокран, смен"
+          value={s.calculationSettings.craneShifts}
+          unit=""
+          step={1}
+          min={0}
+          onChange={(craneShifts) => s.patchSettings({ craneShifts })}
+        />
+        <Num
+          label="Автокран, сом/смена"
+          value={s.calculationSettings.craneShiftPrice}
+          unit=""
+          step={1000}
+          min={0}
+          onChange={(craneShiftPrice) => s.patchSettings({ craneShiftPrice })}
+        />
+        <Num
+          label="Леса / подмости, сом/м²"
+          value={s.calculationSettings.scaffoldPricePerM2}
+          unit=""
+          step={10}
+          min={0}
+          onChange={(scaffoldPricePerM2) =>
+            s.patchSettings({ scaffoldPricePerM2 })
+          }
+        />
+        <Num
+          label="Погодный резерв"
+          value={s.calculationSettings.weatherRiskPercent}
+          unit="%"
+          step={1}
+          min={0}
+          max={30}
+          onChange={(weatherRiskPercent) =>
+            s.patchSettings({ weatherRiskPercent })
+          }
         />
         <label className="check">
           <input
@@ -337,54 +740,39 @@ export function ProjectForms() {
           Объединять зеркальные
         </label>
       </section>
-      <section>
-        <h3>Коммерция и смета</h3>
-        <Text
-          label="Название объекта"
-          value={s.commercial.objectName}
-          placeholder="Напр.: Ангар 24×48 м"
-          onChange={(objectName) => s.patchCommercial({ objectName })}
-        />
-        <Text
-          label="Адрес объекта"
-          value={s.commercial.objectAddress}
-          placeholder="Город, улица, ориентир"
-          onChange={(objectAddress) => s.patchCommercial({ objectAddress })}
-        />
-        <Text
-          label="Заказчик"
-          value={s.commercial.customer}
-          placeholder="ФИО или ОсОО"
-          onChange={(customer) => s.patchCommercial({ customer })}
-        />
-        <Text
-          label="Контакт"
-          value={s.commercial.contact}
-          placeholder="+996 ..."
-          onChange={(contact) => s.patchCommercial({ contact })}
-        />
-        <Text
-          label="Менеджер"
-          value={s.commercial.managerName}
-          onChange={(managerName) => s.patchCommercial({ managerName })}
-        />
-        <Text
-          label="Телефон менеджера"
-          value={s.commercial.managerPhone}
-          onChange={(managerPhone) => s.patchCommercial({ managerPhone })}
-        />
-        <Text
-          label="Завод (отправление)"
-          value={s.commercial.factoryName}
-          onChange={(factoryName) => s.patchCommercial({ factoryName })}
-        />
-        <Text
-          label="Адрес завода"
-          value={s.commercial.factoryAddress}
-          onChange={(factoryAddress) => s.patchCommercial({ factoryAddress })}
-        />
-      </section>
+      <ManagerCard />
     </div>
+  );
+}
+// Блок «Менеджер»: данные приходят из личного кабинета авторизации,
+// каждый раз заново их вводить не нужно.
+function ManagerCard() {
+  const s = useProjectStore();
+  return (
+    <section className="manager-card">
+      <h3>Менеджер</h3>
+      <div className="manager-info">
+        <div>
+          <span>Менеджер</span>
+          <strong>{s.commercial.managerName || "—"}</strong>
+        </div>
+        <div>
+          <span>Телефон</span>
+          <strong>{s.commercial.managerPhone || "—"}</strong>
+        </div>
+        <div>
+          <span>Завод (отправление)</span>
+          <strong>{s.commercial.factoryName || "—"}</strong>
+        </div>
+        <div>
+          <span>Адрес завода</span>
+          <strong>{s.commercial.factoryAddress || "—"}</strong>
+        </div>
+      </div>
+      <small className="field-hint">
+        Изменяется в личном кабинете (иконка профиля в шапке).
+      </small>
+    </section>
   );
 }
 const OPENING_TYPES: { value: Opening["type"]; label: string }[] = [
@@ -497,6 +885,26 @@ function PanelForm({
   return (
     <section>
       <h3>{title}</h3>
+      <Select
+        label="Серия панели"
+        value={p.series}
+        onChange={(series) =>
+          patch({
+            ...panelSeriesDefaults(series as typeof p.series),
+            series: series as typeof p.series,
+          })
+        }
+      >
+        {PANEL_SERIES_OPTIONS.filter((option) =>
+          kind === "roofPanelSystem"
+            ? option.value === "roof-tsp"
+            : option.value !== "roof-tsp",
+        ).map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
       <Num
         label="Толщина панели"
         value={p.thickness}
@@ -519,9 +927,10 @@ function PanelForm({
       </Select>
       <RalPalette value={p.ralColor} onChange={(ralColor) => patch({ ralColor })} />
       <small className="field-hint">
-        {kind === "wallPanelSystem"
-          ? "Горизонтальная раскладка, ширина 1000 мм"
-          : "Вертикальная раскладка, длина рассчитывается по скату"}
+        Серия: {
+          PANEL_SERIES_OPTIONS.find((option) => option.value === p.series)?.note ??
+          "типовая серия"
+        }
       </small>
     </section>
   );

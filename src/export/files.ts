@@ -3,6 +3,8 @@ import type { ProjectCalculation, ProjectInput } from "../domain/types";
 import { insulationLabel } from "../domain/panelOptions";
 import { ralHex } from "../domain/ral";
 import { buildSurfaceSvg, svgToPngDataUrl } from "./drawingSvg";
+import { buildNodeSheets } from "./nodeSheets";
+import { buildProjectSheets } from "./projectSheets";
 import { resolveRoof } from "../geometry/surfaces";
 const download = (name: string, blob: Blob) => {
   const a = document.createElement("a");
@@ -354,6 +356,15 @@ export async function exportPdf(
   const doc = new jsPDF({ format: "a4", orientation: "portrait", unit: "mm" });
   doc.addImage(cv.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, 210, 297);
 
+  const projectSheets = buildProjectSheets(input, calc, {
+    object: c.objectName,
+    date: today,
+  });
+  for (const projectSheet of projectSheets) {
+    doc.addPage("a4", "landscape");
+    doc.addImage(projectSheet, "JPEG", 0, 0, 297, 210);
+  }
+
   /* --- Страницы 2+: чертежи всех поверхностей, оформленные листами
          с рамкой и основной надписью (независимо от открытой вкладки) --- */
   const totalSheets = calc.surfaces.length + 1;
@@ -381,5 +392,13 @@ export async function exportPdf(
     doc.addImage(pageImg, "JPEG", 0, 0, 297, 210);
     sheet++;
   }
-  doc.save("коммерческое-предложение.pdf");
+  const nodeSheets = await buildNodeSheets(input, calc, {
+    object: c.objectName,
+    date: today,
+  });
+  for (const nodeSheet of nodeSheets) {
+    doc.addPage("a4", "landscape");
+    doc.addImage(nodeSheet, "JPEG", 0, 0, 297, 210);
+  }
+  doc.save("проект-сэндвич-панели-АР-КЖ-КМ.pdf");
 }

@@ -1,35 +1,38 @@
 import { create } from "zustand";
 import { calculateProject } from "../calculation/calculateProject";
 import { defaultProject } from "../domain/defaultProject";
+import { panelSeriesDefaults } from "../domain/panelOptions";
 import { DEFAULT_ROOF_RAL, DEFAULT_WALL_RAL } from "../domain/ral";
+import { regionById } from "../domain/regions";
 import type {
   Opening,
   ProjectCalculation,
   ProjectInput,
 } from "../domain/types";
-const KEY = "sandwich-panels-project-v1";
+const KEY = "sandwich-panels-project-v2";
 const withPanelRules = (project: ProjectInput): ProjectInput => ({
   ...project,
   openings: project.openings ?? [],
+  structural: { ...defaultProject.structural, ...project.structural },
   wallPanelSystem: {
+    ...panelSeriesDefaults(project.wallPanelSystem.series ?? "wall-z-lock"),
     ...project.wallPanelSystem,
+    series: project.wallPanelSystem.series ?? "wall-z-lock",
     thickness: project.wallPanelSystem.thickness ?? 100,
     ralColor: project.wallPanelSystem.ralColor ?? DEFAULT_WALL_RAL,
     insulation: project.wallPanelSystem.insulation ?? "basalt",
-    effectiveWidth: 1000,
-    nominalWidth: 1000,
-    layoutDirection: "horizontal",
-    maxLength: 12000,
   },
   roofPanelSystem: {
+    ...panelSeriesDefaults(project.roofPanelSystem.series ?? "roof-tsp"),
     ...project.roofPanelSystem,
+    series: project.roofPanelSystem.series ?? "roof-tsp",
     thickness: project.roofPanelSystem.thickness ?? 100,
     ralColor: project.roofPanelSystem.ralColor ?? DEFAULT_ROOF_RAL,
     insulation: project.roofPanelSystem.insulation ?? "basalt",
-    effectiveWidth: 1000,
-    nominalWidth: 1000,
-    layoutDirection: "vertical",
-    maxLength: 12000,
+  },
+  calculationSettings: {
+    ...defaultProject.calculationSettings,
+    ...project.calculationSettings,
   },
 });
 type Tab = "3d" | "spec" | "summary" | string;
@@ -55,6 +58,8 @@ interface State extends ProjectInput {
   ) => void;
   patchSettings: (v: Partial<ProjectInput["calculationSettings"]>) => void;
   patchCommercial: (v: Partial<ProjectInput["commercial"]>) => void;
+  patchStructural: (v: Partial<ProjectInput["structural"]>) => void;
+  setRegion: (regionId: string) => void;
   addOpening: (o: Opening) => void;
   updateOpening: (id: string, v: Partial<Opening>) => void;
   removeOpening: (id: string) => void;
@@ -87,6 +92,7 @@ function projectOf(s: State): ProjectInput {
     openings: s.openings,
     calculationSettings: s.calculationSettings,
     commercial: s.commercial,
+    structural: s.structural,
   };
 }
 function recalc(
@@ -126,6 +132,17 @@ export const useProjectStore = create<State>((set, get) => ({
     }),
   patchCommercial: (v) =>
     recalc(set, get, { commercial: { ...get().commercial, ...v } }),
+  patchStructural: (v) =>
+    recalc(set, get, { structural: { ...get().structural, ...v } }),
+  // Геометка объекта: регион определяет снег/ветер/грунт и транспортное плечо
+  setRegion: (regionId) =>
+    recalc(set, get, {
+      structural: { ...get().structural, regionId },
+      calculationSettings: {
+        ...get().calculationSettings,
+        transportDistanceKm: regionById(regionId).transportKm,
+      },
+    }),
   addOpening: (o) => recalc(set, get, { openings: [...get().openings, o] }),
   updateOpening: (id, v) =>
     recalc(set, get, {

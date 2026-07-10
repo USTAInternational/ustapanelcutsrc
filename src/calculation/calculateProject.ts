@@ -9,6 +9,7 @@ import { polygonArea } from "../geometry/core";
 import { applyOpeningsToPanels, openingIsValid } from "../geometry/openings";
 import { layoutPanelsOnSurface } from "../geometry/layout";
 import { createBuildingSurfaces, resolveRoof } from "../geometry/surfaces";
+import { calculateStructural } from "./structural";
 const round = (n: number, t: number) => Math.round(n / t) * t;
 function canonicalPolygon(points: number[][]): string {
   const rings = [points, [...points].reverse()];
@@ -76,7 +77,10 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
     warnings: CalculationWarning[] = [];
   for (const o of input.openings) {
     const s = surfaces.find((v) => v.id === o.surfaceId);
-    if (!s || !openingIsValid(o, s))
+    if (
+      !s ||
+      !openingIsValid(o, s, input.calculationSettings.openingClearanceMm)
+    )
       warnings.push({
         id: `opening-${o.id}`,
         severity: "error",
@@ -84,17 +88,19 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
         message: `Проем «${o.name}» выходит за границы фасада`,
       });
   }
-  let panels = surfaces.flatMap((s) =>
-    layoutPanelsOnSurface(
-      s,
-      s.type === "roof" ? input.roofPanelSystem : input.wallPanelSystem,
-    ),
-  );
-  panels = applyOpeningsToPanels(
-    panels,
-    input.openings,
-    input.calculationSettings,
-  );
+  const quickMode = input.calculationSettings.quickMode;
+  let panels = quickMode
+    ? []
+    : surfaces.flatMap((s) =>
+        layoutPanelsOnSurface(
+          s,
+          s.type === "roof" ? input.roofPanelSystem : input.wallPanelSystem,
+          input.calculationSettings,
+        ),
+      );
+  panels = quickMode
+    ? panels
+    : applyOpeningsToPanels(panels, input.openings, input.calculationSettings);
   const wallSurfaces = surfaces.filter((s) => s.type !== "roof");
   const roofSurfaces = surfaces.filter((s) => s.type === "roof");
   const wallSurfaceIds = new Set(wallSurfaces.map((s) => s.id));
@@ -161,13 +167,32 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
         message: `${s.name}: панели разрезаны по длине ската — предусмотрите нахлёст ${input.roofPanelSystem.overlapLength ?? 200} мм (в раскрое стык учтён без нахлёста)`,
       });
   }
-  const openingArea = input.openings.reduce(
+  if (quickMode)
+    warnings.push({
+      id: "quick-mode",
+      severity: "warning",
+      message:
+        "Р‘С‹СЃС‚СЂС‹Р№ СЂР°СЃС‡С‘С‚: СЃРјРµС‚Р° РїРѕР»СѓС‡РµРЅР° Р±РµР· РґРµС‚Р°Р»СЊРЅРѕР№ СЂР°СЃРєР»Р°РґРєРё РїР°РЅРµР»РµР№",
+    });
+  const wallSurfaceArea = wallSurfaces.reduce(
+      (s, v) => s + polygonArea(v.polygon),
+      0,
+    ),
+    roofSurfaceArea = roofSurfaces.reduce(
+      (s, v) => s + polygonArea(v.polygon),
+      0,
+    ),
+    openingArea = input.openings.reduce(
       (s, o) => s + o.width * o.height,
       0,
     ),
-    visible = panels.reduce((s, p) => s + p.visibleArea, 0),
-    blank = panels.reduce((s, p) => s + p.blankArea, 0),
-    waste = panels.reduce((s, p) => s + p.wasteArea, 0),
+    visible = quickMode
+      ? wallSurfaceArea + roofSurfaceArea - openingArea
+      : panels.reduce((s, p) => s + p.visibleArea, 0),
+    blank = quickMode
+      ? visible
+      : panels.reduce((s, p) => s + p.blankArea, 0),
+    waste = quickMode ? 0 : panels.reduce((s, p) => s + p.wasteArea, 0),
     wallPanels = panels.filter((p) =>
       wallSurfaces.some((s) => s.id === p.surfaceId),
     ),
@@ -180,14 +205,11 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
         : input.calculationSettings.pricingMode === "blank-area"
           ? p.blankArea
           : p.nominalWidth * p.maximumLength,
-    wallCost = wallPanels.reduce(
-      (s, p) => s + (basis(p) / 1e6) * input.calculationSettings.wallPricePerM2,
-      0,
-    ),
-    roofCost = roofPanels.reduce(
-      (s, p) => s + (basis(p) / 1e6) * input.calculationSettings.roofPricePerM2,
-      0,
-    ),
+    wallCost =
+      (Math.max(0, wallSurfaceArea - openingArea) / 1e6) *
+      input.calculationSettings.wallPricePerM2,
+    roofCost =
+      (roofSurfaceArea / 1e6) * input.calculationSettings.roofPricePerM2,
     slope = roofSurfaces[0]?.height ?? 0,
     roofLength = input.building.length + 2 * roof.gableOverhang,
     // Высоты продольных фасадов: при односкатной крыше одна сторона выше,
@@ -208,7 +230,12 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
           : (roof.type === "gable" ? 2 : 1) * roofLength,
       gable: roof.type === "flat" ? 0 : (roof.type === "gable" ? 4 : 2) * slope,
       openings: input.openings.reduce(
-        (s, o) => s + 2 * (o.width + o.height),
+        (s, o) =>
+          s +
+          2 *
+            (o.width +
+              o.height +
+              2 * input.calculationSettings.openingClearanceMm),
         0,
       ),
     },
@@ -251,8 +278,12 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
     unit: string,
     price: number,
   ) => ({ section, name, qty, unit, price, sum: qty * price });
-  const wallBasisM2 = wallPanels.reduce((s, p) => s + basis(p), 0) / 1e6;
-  const roofBasisM2 = roofPanels.reduce((s, p) => s + basis(p), 0) / 1e6;
+  const wallBasisM2 = quickMode
+    ? Math.max(0, wallSurfaceArea - openingArea) / 1e6
+    : wallPanels.reduce((s, p) => s + basis(p), 0) / 1e6;
+  const roofBasisM2 = quickMode
+    ? roofSurfaceArea / 1e6
+    : roofPanels.reduce((s, p) => s + basis(p), 0) / 1e6;
   const materials = [
     line("Материалы", "Стеновые панели", wallBasisM2, "м²", cs.wallPricePerM2),
     line("Материалы", "Кровельные панели", roofBasisM2, "м²", cs.roofPricePerM2),
@@ -262,7 +293,8 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
   const works = [
     line("СМР (монтаж)", "Монтаж панелей", panelAreaM2, "м²", cs.mountPanelPricePerM2 ?? 0),
     line("СМР (монтаж)", "Монтаж фасонных элементов", flashingLenM, "пог.м", cs.mountFlashingPricePerM ?? 0),
-  ];
+    line("СМР (монтаж)", "Леса / подмости", wallBasisM2, "м²", cs.scaffoldPricePerM2 ?? 0),
+  ].filter((row) => row.qty > 0 && row.price > 0);
   const transport = [
     line(
       "Транспортировка",
@@ -271,12 +303,21 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
       "км",
       cs.transportRatePerKm ?? 0,
     ),
-  ];
+    line(
+      "Транспортировка",
+      "Автокран / перестановки",
+      cs.craneShifts ?? 0,
+      "смен",
+      cs.craneShiftPrice ?? 0,
+    ),
+  ].filter((row) => row.qty > 0 && row.price > 0);
   const sumOf = (rows: { sum: number }[]) => rows.reduce((s, r) => s + r.sum, 0);
   const materialsSum = sumOf(materials);
   const worksSum = sumOf(works);
   const transportSum = sumOf(transport);
   const productivity = cs.productivityPerDay || 1;
+  const subtotal = materialsSum + worksSum + transportSum;
+  const weatherReserve = subtotal * ((cs.weatherRiskPercent ?? 0) / 100);
   const estimate = {
     materials,
     works,
@@ -284,17 +325,32 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
     materialsSum,
     worksSum,
     transportSum,
-    total: materialsSum + worksSum + transportSum,
+    total: subtotal + weatherReserve,
     mountDays: Math.max(1, Math.ceil(panelAreaM2 / productivity)),
   };
+  const structural = calculateStructural(
+    input.building,
+    input.roof,
+    input.wallPanelSystem.thickness,
+    input.roofPanelSystem.thickness,
+    input.structural,
+    input.openings,
+  );
+  for (const message of structural.warnings)
+    warnings.push({
+      id: `structural-${message}`,
+      severity: "warning",
+      message,
+    });
   return {
     surfaces,
     panels,
     groups,
     warnings,
+    structural,
     summary: {
-      wallArea: wallSurfaces.reduce((s, v) => s + polygonArea(v.polygon), 0),
-      roofArea: roofSurfaces.reduce((s, v) => s + polygonArea(v.polygon), 0),
+      wallArea: wallSurfaceArea,
+      roofArea: roofSurfaceArea,
       openingArea,
       visibleArea: visible,
       blankArea: blank,

@@ -1,5 +1,29 @@
-import type { CommercialInfo, ProjectInput } from "./types";
+import type {
+  CommercialInfo,
+  ProjectInput,
+  StructuralSettings,
+} from "./types";
 import { DEFAULT_ROOF_RAL, DEFAULT_WALL_RAL } from "./ral";
+import { DEFAULT_REGION_ID } from "./regions";
+export const defaultStructural: StructuralSettings = {
+  regionId: DEFAULT_REGION_ID,
+  columnStep: 6000,
+  soilId: "auto",
+  foundationDepth: 1500,
+  panelOffsetMm: 120,
+  facadeVentGapMm: 40,
+  wallGirtStep: 1500,
+  purlinProfile: "auto",
+  columnType: "i-beam",
+  columnSection: "auto",
+  foundationType: "strip",
+  foundationConcreteClass: "B25 W8 F150",
+  foundationRebarClass: "A500C",
+  foundationMainRebarDiameterMm: 14,
+  foundationStirrupDiameterMm: 8,
+  foundationRebarStepMm: 200,
+  foundationCoverMm: 50,
+};
 export const defaultCommercial: CommercialInfo = {
   objectName: "",
   objectAddress: "",
@@ -7,9 +31,8 @@ export const defaultCommercial: CommercialInfo = {
   contact: "",
   managerName: "Муратбеков Эркин",
   managerPhone: "+996 755 405 666",
-  factoryName: "Завод БИАСТ",
-  factoryAddress:
-    "Кыргызстан, г. Бишкек, с. Лебединовка, проспект Ленина, 312",
+  factoryName: "Завод в FreeLAB",
+  factoryAddress: "Кыргызстан, г. Бишкек, Кок-Жар",
 };
 export const defaultProject: ProjectInput = {
   building: { length: 12000, width: 8000, wallHeight: 4000 },
@@ -24,6 +47,7 @@ export const defaultProject: ProjectInput = {
     gableOverhang: 300,
   },
   wallPanelSystem: {
+    series: "wall-z-lock",
     thickness: 100,
     ralColor: DEFAULT_WALL_RAL,
     insulation: "basalt",
@@ -36,6 +60,7 @@ export const defaultProject: ProjectInput = {
     minimumEdgeWidth: 300,
   },
   roofPanelSystem: {
+    series: "roof-tsp",
     thickness: 100,
     ralColor: DEFAULT_ROOF_RAL,
     insulation: "basalt",
@@ -52,11 +77,15 @@ export const defaultProject: ProjectInput = {
   calculationSettings: {
     reservePercent: 5,
     pricingMode: "blank-area",
+    quickMode: false,
     subtractOpenings: true,
     showWaste: true,
     groupPanels: true,
     groupMirrored: false,
     rounding: 1,
+    mountingGapMm: 0,
+    thermalGapMm: 0,
+    openingClearanceMm: 0,
     wallPricePerM2: 1800,
     roofPricePerM2: 2000,
     ridgePricePerM: 450,
@@ -73,6 +102,11 @@ export const defaultProject: ProjectInput = {
     productivityPerDay: 80,
     transportDistanceKm: 20,
     transportRatePerKm: 120,
+    craneShifts: 0,
+    craneShiftPrice: 0,
+    scaffoldPricePerM2: 0,
+    weatherRiskPercent: 0,
   },
   commercial: defaultCommercial,
+  structural: defaultStructural,
 };
