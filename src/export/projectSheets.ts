@@ -176,7 +176,7 @@ function kmPlanSheet(
     `Решётка: ${calc.structural.truss.diagonals}.`,
     `Прогоны: ${calc.structural.purlin.profile}.`,
     `Шаг прогонов: ${calc.structural.purlin.stepM.toFixed(2)} м.`,
-    `Стеновые ригели: ${calc.structural.wallGirt.profile}.`,
+    "Стеновые панели: крепление непосредственно к колоннам.",
     `Усиление проёмов: ${calc.structural.openingFrames.count} шт., ${calc.structural.openingFrames.totalMassKg.toFixed(0)} кг.`,
     `Металл каркаса: ${calc.structural.totalSteelKg.toFixed(0)} кг.`,
   ];
@@ -356,7 +356,6 @@ function scheduleSheet(
     ["Колонны", `${calc.structural.column.count} шт`, calc.structural.column.section],
     ["Фермы", `${calc.structural.truss.count} шт`, `${calc.structural.truss.topChord} / ${calc.structural.truss.diagonals}`],
     ["Прогоны покрытия", `${calc.structural.purlin.totalLengthM.toFixed(1)} м`, calc.structural.purlin.profile],
-    ["Стеновые ригели", `${calc.structural.wallGirt.totalLengthM.toFixed(1)} м`, calc.structural.wallGirt.profile],
     ["Усиление проёмов", `${calc.structural.openingFrames.totalLengthM.toFixed(1)} м`, calc.structural.openingFrames.profiles],
     ["Бетон", `${calc.structural.foundation.volumeM3.toFixed(2)} м³`, calc.structural.foundation.concrete],
     ["Арматура", `${calc.structural.foundation.rebarMassKg.toFixed(0)} кг`, `${calc.structural.foundation.mainRebar}; ${calc.structural.foundation.stirrups}`],

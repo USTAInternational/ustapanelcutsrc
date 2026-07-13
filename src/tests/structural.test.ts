@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   calculateStructural,
   PURLIN_PROFILES,
+  roofPanelMaxSpanM,
   SOIL_TYPES,
 } from "../calculation/structural";
 import {
@@ -42,8 +43,21 @@ describe("каскад конструкций", () => {
     expect(PURLIN_PROFILES.some((p) => p.name === r.purlin.profile)).toBe(true);
     expect(r.purlin.stressUsage).toBeLessThanOrEqual(0.95);
     expect(r.purlin.deflectionUsage).toBeLessThanOrEqual(1);
+    expect(r.purlin.panelSpanUsage).toBeLessThanOrEqual(1);
     expect(r.purlin.stepM).toBeGreaterThanOrEqual(0.5);
     expect(r.purlin.count).toBeGreaterThan(0);
+  });
+  it("ограничивает шаг прогонов допустимым пролётом кровельной панели", () => {
+    const r = calculateStructural(
+      { length: 24000, width: 12000, wallHeight: 5000 },
+      { ...defaultProject.roof, type: "gable", inputMode: "height", ridgeHeight: 7000 },
+      100,
+      50,
+      { ...defaultProject.structural, regionId: "bishkek" },
+    );
+    const maxSpan = roofPanelMaxSpanM(50, r.loads.totalKgM2);
+    expect(r.purlin.panelMaxSpanM).toBeCloseTo(maxSpan);
+    expect(r.purlin.stepM).toBeLessThanOrEqual(maxSpan);
   });
   it("высота фермы следует правилу L/7…L/6", () => {
     const r = base();
@@ -56,6 +70,22 @@ describe("каскад конструкций", () => {
       { ...defaultProject.structural, regionId: "bishkek" },
     );
     expect(wide.truss.heightM).toBeCloseTo(18 / 6.5, 1);
+  });
+  it("использует заданный уклон кровли для геометрии ската", () => {
+    const r = calculateStructural(
+      { length: 24000, width: 12000, wallHeight: 5000 },
+      {
+        ...defaultProject.roof,
+        type: "gable",
+        inputMode: "angle",
+        slopeAngle: 18.435,
+      },
+      100,
+      100,
+      { ...defaultProject.structural, regionId: "bishkek" },
+    );
+    expect(r.purlin.linesPerSlope).toBe(4);
+    expect(r.loads.windFactorK).toBeCloseTo(0.85);
   });
   it("результат прогона входит в нагрузку фермы, ферма — в колонну", () => {
     const r = base();
@@ -116,6 +146,18 @@ describe("каскад конструкций", () => {
     expect(r.foundation.concrete).toContain("B25");
     expect(r.foundation.rebarMassKg).toBeGreaterThan(0);
     expect(r.foundation.coverMm).toBe(50);
+  });
+  it("фундамент учитывает реакцию фермы, вес колонны и стеновые панели", () => {
+    const r = base();
+    const columnStepM = r.truss.stepM;
+    const wallLineKnM = (panelWeightKgM2(100) * r.column.heightM * 9.80665) / 1000;
+    const columnSelfWeightKn = (r.column.massKgM * r.column.heightM * 9.80665) / 1000;
+    expect(r.foundation.columnReactionKn).toBeCloseTo(r.column.loadKn);
+    expect(r.foundation.columnSelfWeightKn).toBeCloseTo(columnSelfWeightKn);
+    expect(r.foundation.wallLoadKn).toBeCloseTo(wallLineKnM);
+    expect(r.foundation.loadKnM).toBeCloseTo(
+      (r.column.loadKn + columnSelfWeightKn) / columnStepM + wallLineKnM,
+    );
   });
   it("пример из схемы: N=650кН, шаг 6м, Бишкек → B=700мм", () => {
     // Проверяем формулу подбора подошвы на контрольном примере листа

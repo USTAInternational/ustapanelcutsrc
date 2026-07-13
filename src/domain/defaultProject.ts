@@ -12,7 +12,6 @@ export const defaultStructural: StructuralSettings = {
   foundationDepth: 1500,
   panelOffsetMm: 120,
   facadeVentGapMm: 40,
-  wallGirtStep: 1500,
   purlinProfile: "auto",
   columnType: "i-beam",
   columnSection: "auto",

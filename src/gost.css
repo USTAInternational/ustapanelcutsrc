@@ -60,6 +60,10 @@
   width: 35%;
 }
 
+.gost-spec col.gost-unit {
+  width: 5.5%;
+}
+
 .gost-spec col.gost-qty {
   width: 5.5%;
 }
@@ -107,4 +111,32 @@
 
 .gost-spec tr.selected-row td {
   background: #d8ebfc;
+}
+
+.spec-sheet-controls {
+  margin-bottom: 8px;
+}
+
+.gost-spec-wide {
+  min-width: 1040px;
+}
+
+.gost-spec-wide col.gost-designation {
+  width: 20%;
+}
+
+.gost-spec-wide col.gost-name {
+  width: 34%;
+}
+
+.gost-spec-wide col.gost-note {
+  width: 18%;
+}
+
+.gost-spec-wide td:nth-child(6) {
+  text-align: center;
+}
+
+.gost-spec-wide td:nth-child(7) {
+  text-align: left;
 }

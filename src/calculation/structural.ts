@@ -176,6 +176,8 @@ export interface PurlinResult {
   manual: boolean;
   profile: string;
   stepM: number;
+  panelMaxSpanM?: number;
+  panelSpanUsage?: number;
   spanM: number;
   loadKgM: number;
   stressUsage: number;
@@ -226,6 +228,12 @@ export interface FoundationResult {
   type: FoundationType;
   /** Лента: кН/м; столбчатый: кН на один фундамент */
   loadKnM: number;
+  /** Реакция фермы на колонну, кН */
+  columnReactionKn: number;
+  /** Собственный вес колонны на один фундамент, кН */
+  columnSelfWeightKn: number;
+  /** Вертикальная нагрузка стенового ограждения: лента — кН/м; столбчатый — кН на фундамент */
+  wallLoadKn: number;
   soilName: string;
   soilResistanceKpa: number;
   soilRange: string;
@@ -251,7 +259,6 @@ export interface StructuralResult {
   snowDistrict: string;
   windDistrict: string;
   loads: StructuralLoads;
-  wallGirt: PurlinResult;
   purlin: PurlinResult;
   truss: TrussResult;
   column: ColumnResult;
@@ -269,6 +276,43 @@ export interface StructuralResult {
 const PURLIN_STEPS = [2.0, 1.75, 1.5, 1.25, 1.0, 0.75, 0.5];
 const roundTo = (v: number, step: number) => Math.round(v / step) * step;
 
+/** Допустимый пролёт кровельной сэндвич-панели между прогонами, м.
+ * Таблица учитывает совместно прочность и прогиб панели: строки — толщина панели,
+ * столбцы — суммарная нагрузка на кровлю. Значения нужно сверить с паспортом
+ * конкретного производителя, когда он известен.
+ */
+export const ROOF_PANEL_SPAN_TABLE: {
+  thicknessMm: number;
+  spansByLoadKgM2: [number, number][];
+}[] = [
+  { thicknessMm: 50, spansByLoadKgM2: [[100, 1.2], [150, 1.0], [200, 0.8], [250, 0.7]] },
+  { thicknessMm: 80, spansByLoadKgM2: [[100, 2.0], [150, 1.7], [200, 1.45], [250, 1.25]] },
+  { thicknessMm: 100, spansByLoadKgM2: [[100, 2.4], [150, 2.0], [200, 1.75], [250, 1.5]] },
+  { thicknessMm: 120, spansByLoadKgM2: [[100, 2.8], [150, 2.4], [200, 2.1], [250, 1.8]] },
+  { thicknessMm: 150, spansByLoadKgM2: [[100, 3.5], [150, 3.0], [200, 2.6], [250, 2.2]] },
+  { thicknessMm: 200, spansByLoadKgM2: [[100, 4.5], [150, 3.8], [200, 3.3], [250, 2.8]] },
+];
+
+function interpolateTable(points: [number, number][], x: number): number {
+  if (x <= points[0][0]) return points[0][1];
+  const last = points[points.length - 1];
+  if (x >= last[0]) return last[1];
+  for (let i = 1; i < points.length; i++) {
+    const [x1, y1] = points[i - 1];
+    const [x2, y2] = points[i];
+    if (x <= x2) return y1 + ((y2 - y1) * (x - x1)) / (x2 - x1);
+  }
+  return last[1];
+}
+
+export function roofPanelMaxSpanM(thicknessMm: number, loadKgM2: number): number {
+  const spansAtLoad = ROOF_PANEL_SPAN_TABLE.map((row) => [
+    row.thicknessMm,
+    interpolateTable(row.spansByLoadKgM2, loadKgM2),
+  ] as [number, number]);
+  return interpolateTable(spansAtLoad, thicknessMm);
+}
+
 function checkPurlin(profile: RolledProfile, qKgM: number, spanM: number) {
   const qNM = qKgM * G;
   const m = (qNM * spanM * spanM) / 8;
@@ -283,6 +327,7 @@ function checkPurlin(profile: RolledProfile, qKgM: number, spanM: number) {
 
 function selectPurlin(
   loadKgM2: number,
+  roofThicknessMm: number,
   spanM: number,
   slopeLengthM: number,
   slopes: number,
@@ -291,9 +336,11 @@ function selectPurlin(
 ): PurlinResult {
   const manual = PURLIN_PROFILES.find((p) => p.name === manualProfile);
   const candidates = manual ? [manual] : PURLIN_PROFILES;
+  const panelMaxSpanM = roofPanelMaxSpanM(roofThicknessMm, loadKgM2);
   let best: PurlinResult | undefined;
   for (const profile of candidates) {
     for (const stepM of PURLIN_STEPS) {
+      if (stepM > panelMaxSpanM) continue;
       const qKgM = loadKgM2 * stepM + profile.massKgM;
       const { stressUsage, deflectionUsage } = checkPurlin(
         profile,
@@ -310,6 +357,8 @@ function selectPurlin(
         manual: Boolean(manual),
         profile: profile.name,
         stepM,
+        panelMaxSpanM,
+        panelSpanUsage: stepM / panelMaxSpanM,
         spanM,
         loadKgM: qKgM,
         stressUsage,
@@ -326,7 +375,7 @@ function selectPurlin(
   }
   if (best) return best;
   const fallback = manual ?? PURLIN_PROFILES[PURLIN_PROFILES.length - 1];
-  const stepM = 0.5;
+  const stepM = PURLIN_STEPS.find((step) => step <= panelMaxSpanM) ?? 0.5;
   const qKgM = loadKgM2 * stepM + fallback.massKgM;
   const { stressUsage, deflectionUsage } = checkPurlin(fallback, qKgM, spanM);
   const linesPerSlope = Math.max(2, Math.floor(slopeLengthM / stepM) + 1);
@@ -336,6 +385,8 @@ function selectPurlin(
     manual: Boolean(manual),
     profile: fallback.name,
     stepM,
+    panelMaxSpanM,
+    panelSpanUsage: stepM / panelMaxSpanM,
     spanM,
     loadKgM: qKgM,
     stressUsage,
@@ -345,63 +396,6 @@ function selectPurlin(
     count,
     totalLengthM: count * spanM,
     totalMassKg: count * spanM * fallback.massKgM,
-  };
-}
-
-function selectWallGirt(
-  loadKgM2: number,
-  spanM: number,
-  wallHeightM: number,
-  perimeterM: number,
-  baysCount: number,
-  stepMm: number,
-): PurlinResult {
-  const stepM = Math.max(0.5, stepMm / 1000);
-  let best: PurlinResult | undefined;
-  for (const profile of PURLIN_PROFILES) {
-    const qKgM = loadKgM2 * stepM + profile.massKgM;
-    const { stressUsage, deflectionUsage } = checkPurlin(profile, qKgM, spanM);
-    if (stressUsage > 0.95 || deflectionUsage > 1) continue;
-    const linesPerSlope = Math.max(2, Math.floor(wallHeightM / stepM) + 1);
-    const count = linesPerSlope * (2 * baysCount + 2);
-    const totalLengthM = linesPerSlope * perimeterM;
-    const candidate: PurlinResult = {
-      ok: true,
-      manual: true,
-      profile: profile.name,
-      stepM,
-      spanM,
-      loadKgM: qKgM,
-      stressUsage,
-      deflectionUsage,
-      linesPerSlope,
-      slopes: 4,
-      count,
-      totalLengthM,
-      totalMassKg: totalLengthM * profile.massKgM,
-    };
-    if (!best || candidate.totalMassKg < best.totalMassKg) best = candidate;
-  }
-  if (best) return best;
-  const fallback = PURLIN_PROFILES[PURLIN_PROFILES.length - 1];
-  const qKgM = loadKgM2 * stepM + fallback.massKgM;
-  const { stressUsage, deflectionUsage } = checkPurlin(fallback, qKgM, spanM);
-  const linesPerSlope = Math.max(2, Math.floor(wallHeightM / stepM) + 1);
-  const totalLengthM = linesPerSlope * perimeterM;
-  return {
-    ok: false,
-    manual: true,
-    profile: fallback.name,
-    stepM,
-    spanM,
-    loadKgM: qKgM,
-    stressUsage,
-    deflectionUsage,
-    linesPerSlope,
-    slopes: 4,
-    count: linesPerSlope * (2 * baysCount + 2),
-    totalLengthM,
-    totalMassKg: totalLengthM * fallback.massKgM,
   };
 }
 
@@ -533,6 +527,7 @@ function selectColumn(
 function selectFoundation(
   type: FoundationType,
   columnLoadKn: number,
+  columnSelfWeightKn: number,
   columnStepM: number,
   wallLineKnM: number,
   soil: SoilType,
@@ -554,8 +549,12 @@ function selectFoundation(
   };
   const unitMass = (diameterMm: number) => (diameterMm * diameterMm) / 162;
   if (type === "pad") {
+    const wallLoadPerFoundationKn =
+      columnCount > 0 ? (wallLineKnM * perimeterM) / columnCount : 0;
+    const designLoadKn =
+      columnLoadKn + columnSelfWeightKn + wallLoadPerFoundationKn;
     // Столбчатый: квадратная плита под каждую колонну, a = √(N / R′)
-    const rawSide = Math.sqrt(columnLoadKn / bearing);
+    const rawSide = Math.sqrt(designLoadKn / bearing);
     const sideM = Math.max(0.8, Math.ceil(rawSide * 10) / 10);
     const plateM = sideM <= 1.2 ? 0.3 : sideM <= 1.8 ? 0.4 : 0.5;
     const layers = sideM <= 1.2 ? 1 : 2;
@@ -568,7 +567,10 @@ function selectFoundation(
     return {
       ...common,
       type,
-      loadKnM: columnLoadKn,
+      loadKnM: designLoadKn,
+      columnReactionKn: columnLoadKn,
+      columnSelfWeightKn,
+      wallLoadKn: wallLoadPerFoundationKn,
       widthMm: Math.round(sideM * 1000),
       heightMm: Math.round(plateM * 1000),
       mainRebar: `Сетка Ø${settings.foundationMainRebarDiameterMm} ${settings.foundationRebarClass}, шаг ${settings.foundationRebarStepMm} мм (${layers} слой)`,
@@ -582,7 +584,8 @@ function selectFoundation(
     };
   }
   // Лента: B = N / (R × (1 − 0,1·h)) — по схеме расчёта, γср учтён в формуле
-  const loadKnM = columnLoadKn / columnStepM + wallLineKnM;
+  const columnLineKnM = (columnLoadKn + columnSelfWeightKn) / columnStepM;
+  const loadKnM = columnLineKnM + wallLineKnM;
   const rawWidth = loadKnM / bearing;
   const widthM = Math.max(0.4, Math.ceil(rawWidth * 10) / 10);
   const heightM = Math.min(1.5, Math.max(0.8, depthM));
@@ -604,6 +607,9 @@ function selectFoundation(
     ...common,
     type,
     loadKnM,
+    columnReactionKn: columnLoadKn,
+    columnSelfWeightKn,
+    wallLoadKn: wallLineKnM,
     widthMm: Math.round(widthM * 1000),
     heightMm: Math.round(heightM * 1000),
     mainRebar: `${mainBarCount}Ø${settings.foundationMainRebarDiameterMm} ${settings.foundationRebarClass}`,
@@ -658,23 +664,11 @@ export function calculateStructural(
         ? Math.hypot(widthM, rise)
         : widthM;
   const perimeterM = 2 * (lengthM + widthM);
-  const wallLoadKgM2 = panelWeightKgM2(wallThicknessMm) + loads.windKgM2 * 0.85;
-  const wallGirt = selectWallGirt(
-    wallLoadKgM2,
-    columnStepM,
-    wallM,
-    perimeterM,
-    baysCount,
-    structural.wallGirtStep,
-  );
-  if (!wallGirt.ok)
-    warnings.push(
-      `Стеновые ригели: профиль ${wallGirt.profile} не проходит по шагу ${wallGirt.stepM.toFixed(2)} м`,
-    );
 
   // Шаг 1. Прогоны: пролёт равен шагу ферм, идут вдоль здания
   const purlin = selectPurlin(
     loads.totalKgM2,
+    roofThicknessMm,
     columnStepM,
     slopeLengthM,
     slopes,
@@ -725,7 +719,7 @@ export function calculateStructural(
       `Колонна: гибкость λ = ${Math.round(column.lambda)} > 120 — рекомендуются распорки или связи`,
     );
 
-  // Шаг 4. Ленточный фундамент: колонна + вес стенового ограждения
+  // Шаг 4. Фундамент: реакция фермы, собственный вес колонны и вес стенового ограждения
   const soil =
     SOIL_TYPES.find((s) => s.id === structural.soilId) ??
     SOIL_TYPES.find((s) => s.name === region.soil) ?? {
@@ -735,9 +729,11 @@ export function calculateStructural(
       range: region.soilResistanceRange,
     };
   const wallLineKnM = (panelWeightKgM2(wallThicknessMm) * wallM * G) / 1000;
+  const columnSelfWeightKn = (column.massKgM * wallM * G) / 1000;
   const foundation = selectFoundation(
     structural.foundationType,
     columnLoadKn,
+    columnSelfWeightKn,
     columnStepM,
     wallLineKnM,
     soil,
@@ -774,7 +770,6 @@ export function calculateStructural(
     },
   );
   const totalSteelKg =
-    wallGirt.totalMassKg +
     purlin.totalMassKg +
     truss.massPerTrussKg * truss.count +
     column.count * wallM * column.massKgM +
@@ -785,7 +780,6 @@ export function calculateStructural(
     snowDistrict: region.snowDistrict,
     windDistrict: region.windDistrict,
     loads,
-    wallGirt,
     purlin,
     truss,
     column,

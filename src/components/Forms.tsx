@@ -250,7 +250,6 @@ function StructuralForm() {
   const s = useProjectStore();
   const r = s.calculation.structural;
   const rows: [string, string][] = [
-    ["Стеновой ригель", `${r.wallGirt.profile}, шаг ${r.wallGirt.stepM} м`],
     ["Прогон", `${r.purlin.profile}, шаг ${r.purlin.stepM} м`],
     [
       "Ферма",
@@ -431,14 +430,6 @@ function StructuralForm() {
         min={0}
         max={120}
         onChange={(facadeVentGapMm) => s.patchStructural({ facadeVentGapMm })}
-      />
-      <Num
-        label="Шаг стеновых ригелей"
-        value={s.structural.wallGirtStep}
-        step={0.1}
-        min={0.5}
-        max={3}
-        onChange={(wallGirtStep) => s.patchStructural({ wallGirtStep })}
       />
       <div className="struct-mini">
         {rows.map(([k, v]) => (

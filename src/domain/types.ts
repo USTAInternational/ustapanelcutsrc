@@ -153,8 +153,6 @@ export interface StructuralSettings {
   panelOffsetMm: number;
   /** Вентиляционный зазор/подсистема за облицовкой, мм */
   facadeVentGapMm: number;
-  /** Шаг стеновых ригелей/прогонов под панели, мм */
-  wallGirtStep: number;
   /** Профиль прогона: "auto" — подбор, иначе имя из сортамента
    *  (ручной выбор = режим «по существующему каркасу» из листа 1) */
   purlinProfile: string;
