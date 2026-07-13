@@ -61,26 +61,6 @@ export function StructuralTab() {
         </div>
       </div>
       <div className="struct-cascade">
-        <section className={`struct-card ${r.wallGirt.ok ? "" : "struct-bad"}`}>
-          <header>
-            <span className="struct-step">0</span>
-            <h3>Стеновой ригель</h3>
-            <Usage value={r.wallGirt.stressUsage} />
-          </header>
-          <Row k="Профиль" v={r.wallGirt.profile} />
-          <Row k="Шаг ригелей" v={`${n1(r.wallGirt.stepM)} м`} />
-          <Row k="Пролёт" v={`${n1(r.wallGirt.spanM)} м`} />
-          <Row k="Нагрузка" v={`${n0(r.wallGirt.loadKgM)} кг/м`} />
-          <Row
-            k="Прогиб"
-            v={`${pct(r.wallGirt.deflectionUsage)} от предела l/200`}
-          />
-          <Row
-            k="Количество"
-            v={`${r.wallGirt.count} шт · ${n0(r.wallGirt.totalLengthM)} пог.м`}
-          />
-          <Row k="Масса" v={`${n0(r.wallGirt.totalMassKg)} кг`} />
-        </section>
         <section className={`struct-card ${r.purlin.ok ? "" : "struct-bad"}`}>
           <header>
             <span className="struct-step">1</span>
@@ -89,6 +69,12 @@ export function StructuralTab() {
           </header>
           <Row k="Профиль" v={r.purlin.profile} />
           <Row k="Шаг прогонов" v={`${n1(r.purlin.stepM)} м`} />
+          {r.purlin.panelMaxSpanM && (
+            <Row
+              k="Панель между прогонами"
+              v={`${pct(r.purlin.panelSpanUsage ?? 0)} от допуска ${n1(r.purlin.panelMaxSpanM)} м`}
+            />
+          )}
           <Row k="Пролёт (шаг ферм)" v={`${n1(r.purlin.spanM)} м`} />
           <Row k="Нагрузка" v={`${n0(r.purlin.loadKgM)} кг/м`} />
           <Row
@@ -162,6 +148,12 @@ export function StructuralTab() {
                 : "Нагрузка на фундамент"
             }
             v={`${n0(r.foundation.loadKnM)} ${r.foundation.type === "strip" ? "кН/м" : "кН"}`}
+          />
+          <Row k="Реакция фермы" v={`${n0(r.foundation.columnReactionKn)} кН`} />
+          <Row k="Вес колонны" v={`${n1(r.foundation.columnSelfWeightKn)} кН`} />
+          <Row
+            k="Вес стеновых панелей"
+            v={`${n1(r.foundation.wallLoadKn)} ${r.foundation.type === "strip" ? "кН/м" : "кН"}`}
           />
           <Row k="Грунт" v={`${r.foundation.soilName}`} />
           <Row

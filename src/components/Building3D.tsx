@@ -564,15 +564,6 @@ function Frame({ showRebar = false }: { showRebar?: boolean }) {
   const frames = Array.from({ length: bays + 1 }, (_, i) => -length / 2 + (i * length) / bays);
   const half = width / 2;
   const columnSize = 0.22;
-  const wallGirtLevels = Array.from(
-    {
-      length: Math.max(
-        1,
-        Math.floor(wallHeight / Math.max(0.4, result.wallGirt.stepM)),
-      ),
-    },
-    (_, index) => result.wallGirt.stepM * (index + 1),
-  ).filter((level) => level < wallHeight - 0.15);
   // Прогоны вдоль здания по скатам с шагом из подбора
   const purlins: { y: number; z: number; normal: Vector3 }[] = [];
   if (roof.type === "gable" && ridgeRise > 0.01) {
@@ -621,12 +612,6 @@ function Frame({ showRebar = false }: { showRebar?: boolean }) {
   const roofSupportOffset = Math.max(
     purlinSize / 2,
     toMeters(structural.panelOffsetMm) - purlinSize / 2,
-  );
-  const wallGirtSize = 0.06;
-  const wallSupportOffset = Math.max(
-    columnSize / 2 + wallGirtSize / 2,
-    toMeters(structural.panelOffsetMm + structural.facadeVentGapMm) -
-      wallGirtSize / 2,
   );
   return (
     <group>
@@ -686,34 +671,6 @@ function Frame({ showRebar = false }: { showRebar?: boolean }) {
           size={purlinSize}
           color={STEEL_DARK}
         />
-      ))}
-      {wallGirtLevels.map((y, i) => (
-        <group key={`girt-${i}`}>
-          <Member
-            a={[-length / 2, y, -half - wallSupportOffset]}
-            b={[length / 2, y, -half - wallSupportOffset]}
-            size={wallGirtSize}
-            color={STEEL_DARK}
-          />
-          <Member
-            a={[-length / 2, y, half + wallSupportOffset]}
-            b={[length / 2, y, half + wallSupportOffset]}
-            size={wallGirtSize}
-            color={STEEL_DARK}
-          />
-          <Member
-            a={[-length / 2 - wallSupportOffset, y, -half]}
-            b={[-length / 2 - wallSupportOffset, y, half]}
-            size={wallGirtSize}
-            color={STEEL_DARK}
-          />
-          <Member
-            a={[length / 2 + wallSupportOffset, y, -half]}
-            b={[length / 2 + wallSupportOffset, y, half]}
-            size={wallGirtSize}
-            color={STEEL_DARK}
-          />
-        </group>
       ))}
       {structural.foundationType === "strip" && (
         <group>

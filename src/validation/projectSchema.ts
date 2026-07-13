@@ -30,7 +30,6 @@ const structuralSchema = z
     foundationDepth: finitePositive.default(defaultStructural.foundationDepth),
     panelOffsetMm: nonnegative.default(defaultStructural.panelOffsetMm),
     facadeVentGapMm: nonnegative.default(defaultStructural.facadeVentGapMm),
-    wallGirtStep: finitePositive.default(defaultStructural.wallGirtStep),
     purlinProfile: z.string().default("auto"),
     columnType: z
       .enum(["i-beam", "tube", "double-channel"])
