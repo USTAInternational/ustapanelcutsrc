@@ -26,8 +26,12 @@ export function SurfaceDrawing({ surface, panels, panelColor }: Props) {
       showOpenings,
       showCuts,
       openings,
+      calculation,
     } = useProjectStore(),
     surfaceOpenings = openings.filter((o) => o.surfaceId === surface.id),
+    assemblyPanelById = new Map(
+      calculation.assembly.panels.map((item) => [item.panelId, item]),
+    ),
     base = useMemo(() => {
       const pad = Math.max(surface.width, surface.height) * 0.08;
       // Дополнительные поля под размерные цепочки ЕСКД (снизу — оси, слева — высоты).
@@ -52,13 +56,16 @@ export function SurfaceDrawing({ surface, panels, panelColor }: Props) {
     const xs: number[] = [0, surface.width];
     const ys: number[] = [0, surface.height];
     for (const p of panels) {
-      const px = p.polygon.map((v) => v.x);
-      const py = p.polygon.map((v) => v.y);
+      const polygon =
+        assemblyPanelById.get(p.id)?.installationPolygon ?? p.polygon;
+      const px = polygon.map((v) => v.x);
+      const py = polygon.map((v) => v.y);
+      if (!px.length || !py.length) continue;
       xs.push(Math.min(...px), Math.max(...px));
       ys.push(Math.min(...py), Math.max(...py));
     }
     return { x: seamEdges(xs), y: seamEdges(ys) };
-  }, [panels, surface.width, surface.height]);
+  }, [panels, surface.width, surface.height, assemblyPanelById]);
   const wheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const k = e.deltaY > 0 ? 1.12 : 0.89,
@@ -125,6 +132,9 @@ export function SurfaceDrawing({ surface, panels, panelColor }: Props) {
         <path d={path(surface.polygon)} className="surface-outline" />
         {panels.map((p) => {
           const label = center(p.polygon);
+          const installationPolygon =
+            assemblyPanelById.get(p.id)?.installationPolygon ?? p.polygon;
+          if (!installationPolygon.length) return null;
           return (
           <g
             key={p.id}
@@ -137,7 +147,7 @@ export function SurfaceDrawing({ surface, panels, panelColor }: Props) {
             }}
           >
             <path
-              d={path(p.polygon)}
+              d={path(installationPolygon)}
               className="panel-shape"
               style={{ fill: p.id === selectedPanelId ? "#7db6ec" : panelColor }}
             />

@@ -25,6 +25,9 @@ export function exportCsv(calc: ProjectCalculation, input: ProjectInput) {
     "Левая длина, мм",
     "Правая длина, мм",
     "Максимальная длина, мм",
+    "Пролёт между осями колонн, мм",
+    "Длина с угловым выпуском, мм",
+    "Видимая длина между фасонными, мм",
     "Угол реза, °",
     "Видимая площадь, м²",
     "Площадь заготовки, м²",
@@ -48,6 +51,12 @@ export function exportCsv(calc: ProjectCalculation, input: ProjectInput) {
     p.leftLength,
     p.rightLength,
     p.maximumLength,
+    calc.assembly.panels.find((item) => item.panelId === p.id)?.supportSpan
+      ?.axisLengthMm ?? "",
+    calc.assembly.panels.find((item) => item.panelId === p.id)?.supportSpan
+      ?.fabricationLengthMm ?? "",
+    calc.assembly.panels.find((item) => item.panelId === p.id)?.supportSpan
+      ?.visibleLengthMm ?? "",
     p.topCutAngle?.toFixed(1),
     (p.visibleArea / 1e6).toFixed(3),
     (p.blankArea / 1e6).toFixed(3),
@@ -59,13 +68,25 @@ export function exportCsv(calc: ProjectCalculation, input: ProjectInput) {
   const fl = S.flashings;
   const extra: unknown[][] = [
     [],
+    ["Цвет фасонных элементов", input.flashingRalColor],
+    [],
     ["ФАСОННЫЕ ЭЛЕМЕНТЫ", "Длина, пог.м"],
     ["Цокольная планка", (fl.base / 1000).toFixed(2)],
     ["Углы наружные", (fl.externalCorners / 1000).toFixed(2)],
+    ["Межколонные нащельники", (fl.wallJoints / 1000).toFixed(2)],
     ["Конёк / верхняя планка", (fl.ridge / 1000).toFixed(2)],
     ["Карнизы", (fl.eave / 1000).toFixed(2)],
     ["Фронтонные планки", (fl.gable / 1000).toFixed(2)],
     ["Обрамление проёмов", (fl.openings / 1000).toFixed(2)],
+    [],
+    ["ЭКЗЕМПЛЯРЫ ФАСОННЫХ", "Марка", "Профиль", "Длина, м", "Заготовок"],
+    ...calc.flashings.map((item) => [
+      "Фасонный элемент",
+      item.mark,
+      `${item.profile.code} · ${item.profile.name}`,
+      (item.lengthMm / 1000).toFixed(3),
+      item.quantity,
+    ]),
     [],
     ["СМЕТА", "Наименование", "Кол-во", "Ед.", "Цена, сом", "Сумма, сом"],
     ...[...est.materials, ...est.works, ...est.transport].map((r) => [
@@ -125,6 +146,7 @@ export function exportDxf(calc: ProjectCalculation, gap = 1000) {
   layer("Развертка", 5);
   layer("Панели", 3);
   layer("Проемы", 1);
+  layer("Фасонные", 30);
   g(0, "ENDTAB"); g(0, "ENDSEC");
   g(0, "SECTION"); g(2, "ENTITIES");
   const poly = (pts: { x: number; y: number }[], lay: string, dx: number) => {
@@ -140,9 +162,35 @@ export function exportDxf(calc: ProjectCalculation, gap = 1000) {
   for (const surface of calc.surfaces) {
     poly(surface.polygon, "Развертка", offset);
     for (const panel of calc.panels.filter((p) => p.surfaceId === surface.id)) {
-      poly(panel.polygon, "Панели", offset);
+      const installation = calc.assembly.panels.find(
+        (item) => item.panelId === panel.id,
+      );
+      poly(installation?.installationPolygon ?? panel.polygon, "Панели", offset);
       for (const cut of panel.cutouts) poly(cut.polygon, "Проемы", offset);
     }
+    const frame = calc.assembly.surfaceFrames.find(
+      (item) => item.surfaceId === surface.id,
+    );
+    const jointIds = new Set(
+      calc.joints
+        .filter((joint) => joint.surfaceIds.includes(surface.id))
+        .map((joint) => joint.id),
+    );
+    if (frame)
+      for (const flashing of calc.flashings.filter((item) => jointIds.has(item.jointId)))
+        poly(
+          flashing.path.map((point) => {
+            const dx = point.x - frame.origin.x;
+            const dy = point.y - frame.origin.y;
+            const dz = point.z - frame.origin.z;
+            return {
+              x: dx * frame.uAxis.x + dy * frame.uAxis.y + dz * frame.uAxis.z,
+              y: dx * frame.vAxis.x + dy * frame.vAxis.y + dz * frame.vAxis.z,
+            };
+          }),
+          "Фасонные",
+          offset,
+        );
     offset += surface.width + gap;
   }
   g(0, "ENDSEC"); g(0, "EOF");
@@ -154,7 +202,7 @@ export function exportDxf(calc: ProjectCalculation, gap = 1000) {
 export function exportJson(input: ProjectInput) {
   download(
     "проект.json",
-    new Blob([JSON.stringify({ formatVersion: 1, ...input }, null, 2)], {
+    new Blob([JSON.stringify({ formatVersion: 2, ...input }, null, 2)], {
       type: "application/json",
     }),
   );
@@ -283,6 +331,17 @@ export async function exportPdf(
   ctx.textAlign = "right";
   ctx.fillText(`Дата: ${today}`, W - M, 110);
   ctx.textAlign = "left";
+  if (calc.assembly.documentationBlocked) {
+    ctx.fillStyle = "#a33a24";
+    ctx.fillRect(0, 150, W, 34);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 17px Arial";
+    ctx.fillText(
+      "ЭСКИЗ: размеры узлов не подтверждены каталогами производителя",
+      M,
+      173,
+    );
+  }
 
   let y = 200;
   ctx.fillStyle = "#1c2b36"; ctx.font = "19px Arial";
@@ -302,6 +361,7 @@ export async function exportPdf(
     ["Крыша", `${ROOF_LABEL[r.type]}${r.type === "flat" ? "" : `, уклон ${r.slopeAngle.toFixed(1)}°`}`],
     ["Стеновые панели", `${input.wallPanelSystem.thickness} мм, ${insulationLabel(input.wallPanelSystem.insulation)}, ${input.wallPanelSystem.ralColor}`],
     ["Кровельные панели", `${input.roofPanelSystem.thickness} мм, ${insulationLabel(input.roofPanelSystem.insulation)}, ${input.roofPanelSystem.ralColor}`],
+    ["Фасонные элементы", input.flashingRalColor],
     ["Панели (стены / кровля)", `${S.wallPanelCount} шт / ${S.roofPanelCount} шт, уникальных марок ${S.uniqueCount}`],
     ["Площадь заготовок / отходы", `${(S.blankArea / 1e6).toFixed(2)} м² / ${S.wastePercent.toFixed(1)}%`],
     ["Проёмы", input.openings.length ? `${input.openings.length} шт, ${(S.openingArea / 1e6).toFixed(2)} м²` : "нет"],
@@ -379,7 +439,18 @@ export async function exportPdf(
       surface,
       calc.panels.filter((p) => p.surfaceId === surface.id),
       input.openings.filter((o) => o.surfaceId === surface.id),
-      { panelFill: fill },
+      {
+        panelFill: fill,
+        flashingStroke: ralHex(input.flashingRalColor),
+        assemblyPanels: calc.assembly.panels.filter(
+          (panel) => panel.surfaceId === surface.id,
+        ),
+        flashings: calc.flashings,
+        joints: calc.joints,
+        frame: calc.assembly.surfaceFrames.find(
+          (item) => item.surfaceId === surface.id,
+        ),
+      },
     );
     const png = await svgToPngDataUrl(svg, 2400);
     const pageImg = await drawingSheet(png, {
@@ -400,5 +471,9 @@ export async function exportPdf(
     doc.addPage("a4", "landscape");
     doc.addImage(nodeSheet, "JPEG", 0, 0, 297, 210);
   }
-  doc.save("проект-сэндвич-панели-АР-КЖ-КМ.pdf");
+  doc.save(
+    calc.assembly.documentationBlocked
+      ? "эскиз-сэндвич-панели-АР-КЖ-КМ.pdf"
+      : "проект-сэндвич-панели-АР-КЖ-КМ.pdf",
+  );
 }

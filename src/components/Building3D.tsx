@@ -11,14 +11,32 @@ import {
   Vector2,
   Vector3,
 } from "three";
-import type { Opening, PanelPiece, Point2D, Surface } from "../domain/types";
+import type {
+  AssemblyPanel,
+  ConstructionModel,
+  FlashingInstance,
+  JointInstance,
+  Opening,
+  PanelPiece,
+  Point2D,
+  Surface,
+  SurfaceFrame,
+} from "../domain/types";
 import { ralHex } from "../domain/ral";
+import { mapSurfacePoint } from "../geometry/constructionModel";
 import { resolveRoof } from "../geometry/surfaces";
 import { useProjectStore } from "../store/projectStore";
 
 type WorldPoint = [number, number, number];
 type Mapper = (point: Point2D) => WorldPoint;
 const toMeters = (value: number) => value / 1000;
+const CORNER_FLASHING_VISUAL_THICKNESS_MM = 10;
+const CORNER_FLASHING_VISUAL_CLEARANCE_MM = 3;
+const CORNER_FLASHING_VISUAL_LEG_EXTENSION_MM = 20;
+const PANEL_CORNER_VISUAL_REVEAL_MM = 15;
+const RIDGE_FLASHING_VISUAL_THICKNESS_MM = 10;
+const RIDGE_FLASHING_VISUAL_CLEARANCE_MM = 3;
+const RIDGE_FLASHING_VISUAL_LEG_EXTENSION_MM = 30;
 
 function pointOnNormal(point: WorldPoint, normal: Vector3, offset: number): WorldPoint {
   return [
@@ -78,6 +96,363 @@ function extrudedGeometry(
   geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
   geometry.computeVertexNormals();
   return geometry;
+}
+
+function cornerFlashingGeometry(
+  bottom: Point2D & { z: number },
+  top: Point2D & { z: number },
+  firstFrame: SurfaceFrame,
+  secondFrame: SurfaceFrame,
+  firstPanel: AssemblyPanel,
+  secondPanel: AssemblyPanel,
+  firstLegMm: number,
+  secondLegMm: number,
+  thicknessMm: number,
+) {
+  const firstNormal = new Vector3(
+    firstFrame.normal.x,
+    firstFrame.normal.y,
+    firstFrame.normal.z,
+  );
+  const secondNormal = new Vector3(
+    secondFrame.normal.x,
+    secondFrame.normal.y,
+    secondFrame.normal.z,
+  );
+  const thickness = toMeters(
+    Math.max(CORNER_FLASHING_VISUAL_THICKNESS_MM, thicknessMm),
+  );
+  const visualClearance = toMeters(CORNER_FLASHING_VISUAL_CLEARANCE_MM);
+  const firstOffset = toMeters(
+    firstPanel.innerOffsetMm + firstPanel.thicknessMm,
+  );
+  const secondOffset = toMeters(
+    secondPanel.innerOffsetMm + secondPanel.thicknessMm,
+  );
+  const firstInward = secondNormal.clone().multiplyScalar(-1);
+  const secondInward = firstNormal.clone().multiplyScalar(-1);
+  const cornerAt = (point: Point2D & { z: number }) =>
+    new Vector3(toMeters(point.x), toMeters(point.y), toMeters(point.z))
+      .addScaledVector(firstNormal, firstOffset + visualClearance + thickness)
+      .addScaledVector(secondNormal, secondOffset + visualClearance + thickness);
+  const section = [
+    new Vector2(0, 0),
+    new Vector2(
+      toMeters(firstLegMm + CORNER_FLASHING_VISUAL_LEG_EXTENSION_MM),
+      0,
+    ),
+    new Vector2(
+      toMeters(firstLegMm + CORNER_FLASHING_VISUAL_LEG_EXTENSION_MM),
+      thickness,
+    ),
+    new Vector2(thickness, thickness),
+    new Vector2(
+      thickness,
+      toMeters(secondLegMm + CORNER_FLASHING_VISUAL_LEG_EXTENSION_MM),
+    ),
+    new Vector2(
+      0,
+      toMeters(secondLegMm + CORNER_FLASHING_VISUAL_LEG_EXTENSION_MM),
+    ),
+  ];
+  const sectionAt = (corner: Vector3) =>
+    section.map((point) =>
+      corner
+        .clone()
+        .addScaledVector(firstInward, point.x)
+        .addScaledVector(secondInward, point.y),
+    );
+  const bottomSection = sectionAt(cornerAt(bottom));
+  const topSection = sectionAt(cornerAt(top));
+  const positions: number[] = [];
+  const triangle = (a: Vector3, b: Vector3, c: Vector3) =>
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+  for (const [a, b, c] of ShapeUtils.triangulateShape(section, [])) {
+    triangle(bottomSection[a], bottomSection[c], bottomSection[b]);
+    triangle(topSection[a], topSection[b], topSection[c]);
+  }
+  for (let index = 0; index < section.length; index += 1) {
+    const next = (index + 1) % section.length;
+    triangle(bottomSection[index], bottomSection[next], topSection[next]);
+    triangle(bottomSection[index], topSection[next], topSection[index]);
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function CornerFlashingMesh({
+  flashing,
+  joint,
+  assembly,
+  color,
+}: {
+  flashing: FlashingInstance;
+  joint: JointInstance;
+  assembly: ConstructionModel;
+  color: string;
+}) {
+  const coordinatedSurfaces = joint.surfaceIds.slice(0, 2).map((surfaceId) => ({
+    frame: assembly.surfaceFrames.find((item) => item.surfaceId === surfaceId),
+    panel: assembly.panels.find((item) => item.surfaceId === surfaceId),
+  }));
+  const first = coordinatedSurfaces[0];
+  const second = coordinatedSurfaces[1];
+  const bottom = flashing.path[0];
+  const top = flashing.path[flashing.path.length - 1];
+  if (!first?.frame || !first.panel || !second?.frame || !second.panel || !bottom || !top)
+    return null;
+  return (
+    <CornerFlashingSolid
+      flashing={flashing}
+      bottom={bottom}
+      top={top}
+      firstFrame={first.frame}
+      secondFrame={second.frame}
+      firstPanel={first.panel}
+      secondPanel={second.panel}
+      color={color}
+    />
+  );
+}
+
+function CornerFlashingSolid({
+  flashing,
+  bottom,
+  top,
+  firstFrame,
+  secondFrame,
+  firstPanel,
+  secondPanel,
+  color,
+}: {
+  flashing: FlashingInstance;
+  bottom: Point2D & { z: number };
+  top: Point2D & { z: number };
+  firstFrame: SurfaceFrame;
+  secondFrame: SurfaceFrame;
+  firstPanel: AssemblyPanel;
+  secondPanel: AssemblyPanel;
+  color: string;
+}) {
+  const geometry = useMemo(
+    () =>
+      cornerFlashingGeometry(
+        bottom,
+        top,
+        firstFrame,
+        secondFrame,
+        firstPanel,
+        secondPanel,
+        flashing.profile.legWidthsMm[0] ?? flashing.profile.visibleWidthMm,
+        flashing.profile.legWidthsMm[1] ?? flashing.profile.visibleWidthMm,
+        flashing.profile.thicknessMm,
+      ),
+    [bottom, firstFrame, firstPanel, flashing.profile, secondFrame, secondPanel, top],
+  );
+  const edges = useMemo(() => new EdgesGeometry(geometry, 20), [geometry]);
+  return (
+    <group userData={{ flashingId: flashing.id }}>
+      <mesh geometry={geometry} renderOrder={5}>
+        <meshStandardMaterial
+          color={color}
+          roughness={0.42}
+          metalness={0.38}
+          emissive="#2b1511"
+          emissiveIntensity={0.12}
+        />
+      </mesh>
+      <lineSegments geometry={edges} renderOrder={6}>
+        <lineBasicMaterial color="#382622" depthTest />
+      </lineSegments>
+    </group>
+  );
+}
+
+function ridgeFlashingGeometry(
+  start: Point2D & { z: number },
+  end: Point2D & { z: number },
+  firstFrame: SurfaceFrame,
+  secondFrame: SurfaceFrame,
+  firstPanel: AssemblyPanel,
+  secondPanel: AssemblyPanel,
+  firstLegMm: number,
+  secondLegMm: number,
+  thicknessMm: number,
+) {
+  const firstNormal = new Vector3(
+    firstFrame.normal.x,
+    firstFrame.normal.y,
+    firstFrame.normal.z,
+  ).normalize();
+  const secondNormal = new Vector3(
+    secondFrame.normal.x,
+    secondFrame.normal.y,
+    secondFrame.normal.z,
+  ).normalize();
+  const firstDown = new Vector3(
+    -firstFrame.vAxis.x,
+    -firstFrame.vAxis.y,
+    -firstFrame.vAxis.z,
+  ).normalize();
+  const secondDown = new Vector3(
+    -secondFrame.vAxis.x,
+    -secondFrame.vAxis.y,
+    -secondFrame.vAxis.z,
+  ).normalize();
+  const up = firstNormal.clone().add(secondNormal).normalize();
+  const thickness = toMeters(
+    Math.max(RIDGE_FLASHING_VISUAL_THICKNESS_MM, thicknessMm),
+  );
+  const clearance = toMeters(RIDGE_FLASHING_VISUAL_CLEARANCE_MM);
+  const firstOffset = toMeters(
+    firstPanel.innerOffsetMm + firstPanel.thicknessMm,
+  );
+  const secondOffset = toMeters(
+    secondPanel.innerOffsetMm + secondPanel.thicknessMm,
+  );
+  const apexRise = Math.max(
+    firstOffset / Math.max(0.1, firstNormal.y),
+    secondOffset / Math.max(0.1, secondNormal.y),
+  );
+  const firstLeg = toMeters(
+    firstLegMm + RIDGE_FLASHING_VISUAL_LEG_EXTENSION_MM,
+  );
+  const secondLeg = toMeters(
+    secondLegMm + RIDGE_FLASHING_VISUAL_LEG_EXTENSION_MM,
+  );
+  const apexAt = (point: Point2D & { z: number }) =>
+    new Vector3(toMeters(point.x), toMeters(point.y), 0).addScaledVector(
+      up,
+      apexRise + clearance + thickness,
+    );
+  const sectionAt = (apex: Vector3) => {
+    const firstOuter = apex.clone().addScaledVector(firstDown, firstLeg);
+    const secondOuter = apex.clone().addScaledVector(secondDown, secondLeg);
+    return [
+      apex,
+      firstOuter,
+      firstOuter.clone().addScaledVector(firstNormal, -thickness),
+      apex.clone().addScaledVector(up, -thickness),
+      secondOuter.clone().addScaledVector(secondNormal, -thickness),
+      secondOuter,
+    ];
+  };
+  const startSection = sectionAt(apexAt(start));
+  const endSection = sectionAt(apexAt(end));
+  const section2d = startSection.map(
+    (point) => new Vector2(point.z, point.y),
+  );
+  const positions: number[] = [];
+  const triangle = (a: Vector3, b: Vector3, c: Vector3) =>
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+  for (const [a, b, c] of ShapeUtils.triangulateShape(section2d, [])) {
+    triangle(startSection[a], startSection[c], startSection[b]);
+    triangle(endSection[a], endSection[b], endSection[c]);
+  }
+  for (let index = 0; index < section2d.length; index += 1) {
+    const next = (index + 1) % section2d.length;
+    triangle(startSection[index], startSection[next], endSection[next]);
+    triangle(startSection[index], endSection[next], endSection[index]);
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function RidgeFlashingMesh({
+  flashing,
+  joint,
+  assembly,
+  color,
+}: {
+  flashing: FlashingInstance;
+  joint: JointInstance;
+  assembly: ConstructionModel;
+  color: string;
+}) {
+  const firstFrame = assembly.surfaceFrames.find(
+    (item) => item.surfaceId === joint.surfaceIds[0],
+  );
+  const secondFrame = assembly.surfaceFrames.find(
+    (item) => item.surfaceId === joint.surfaceIds[1],
+  );
+  const firstPanel = assembly.panels.find(
+    (item) => item.surfaceId === joint.surfaceIds[0],
+  );
+  const secondPanel = assembly.panels.find(
+    (item) => item.surfaceId === joint.surfaceIds[1],
+  );
+  const start = flashing.path[0];
+  const end = flashing.path[flashing.path.length - 1];
+  if (!firstFrame || !secondFrame || !firstPanel || !secondPanel || !start || !end)
+    return null;
+  return (
+    <RidgeFlashingSolid
+      flashing={flashing}
+      start={start}
+      end={end}
+      firstFrame={firstFrame}
+      secondFrame={secondFrame}
+      firstPanel={firstPanel}
+      secondPanel={secondPanel}
+      color={color}
+    />
+  );
+}
+
+function RidgeFlashingSolid({
+  flashing,
+  start,
+  end,
+  firstFrame,
+  secondFrame,
+  firstPanel,
+  secondPanel,
+  color,
+}: {
+  flashing: FlashingInstance;
+  start: Point2D & { z: number };
+  end: Point2D & { z: number };
+  firstFrame: SurfaceFrame;
+  secondFrame: SurfaceFrame;
+  firstPanel: AssemblyPanel;
+  secondPanel: AssemblyPanel;
+  color: string;
+}) {
+  const geometry = useMemo(
+    () =>
+      ridgeFlashingGeometry(
+        start,
+        end,
+        firstFrame,
+        secondFrame,
+        firstPanel,
+        secondPanel,
+        flashing.profile.legWidthsMm[0] ?? flashing.profile.visibleWidthMm / 2,
+        flashing.profile.legWidthsMm[1] ?? flashing.profile.visibleWidthMm / 2,
+        flashing.profile.thicknessMm,
+      ),
+    [end, firstFrame, firstPanel, flashing.profile, secondFrame, secondPanel, start],
+  );
+  const edges = useMemo(() => new EdgesGeometry(geometry, 20), [geometry]);
+  return (
+    <group userData={{ flashingId: flashing.id }}>
+      <mesh geometry={geometry} renderOrder={5}>
+        <meshStandardMaterial
+          color={color}
+          roughness={0.46}
+          metalness={0.34}
+          side={DoubleSide}
+        />
+      </mesh>
+      <lineSegments geometry={edges} renderOrder={6}>
+        <lineBasicMaterial color="#382f2f" depthTest />
+      </lineSegments>
+    </group>
+  );
 }
 
 function SurfaceMesh({ surface, mapper, selected, color }: { surface: Surface; mapper: Mapper; selected: boolean; color: string }) {
@@ -196,6 +571,7 @@ function PanelContours({ panels, mapper, selectedPanelId, onSelect }: { panels: 
 
 function PanelSolids({
   panels,
+  surface,
   mapper,
   selectedPanelId,
   onSelect,
@@ -205,6 +581,7 @@ function PanelSolids({
   normal,
 }: {
   panels: PanelPiece[];
+  surface: Surface;
   mapper: Mapper;
   selectedPanelId?: string;
   onSelect: (id: string) => void;
@@ -213,19 +590,200 @@ function PanelSolids({
   thickness: number;
   normal: Vector3;
 }) {
-  return panels.map((panel) => (
-    <PanelSolid
-      key={panel.id}
-      panel={panel}
-      mapper={mapper}
-      normal={normal}
-      selected={panel.id === selectedPanelId}
-      onSelect={onSelect}
-      color={color}
-      innerOffset={innerOffset}
-      thickness={thickness}
-    />
-  ));
+  const assemblyPanels = useProjectStore.getState().calculation.assembly.panels;
+  return panels.map((panel) => {
+    const assemblyPanel = assemblyPanels.find(
+      (item) => item.panelId === panel.id,
+    );
+    const installationPolygon =
+      assemblyPanel?.installationPolygon ?? panel.polygon;
+    const visualCornerReachMm = assemblyPanel
+      ? Math.max(
+          0,
+          assemblyPanel.innerOffsetMm +
+            assemblyPanel.thicknessMm -
+            PANEL_CORNER_VISUAL_REVEAL_MM,
+        )
+      : 0;
+    const visualPolygon =
+      surface.type === "roof"
+        ? installationPolygon
+        : installationPolygon.map((point) => ({
+            ...point,
+            x: Math.max(
+              -visualCornerReachMm,
+              Math.min(surface.width + visualCornerReachMm, point.x),
+            ),
+          }));
+    return (
+      <PanelSolid
+        key={panel.id}
+        panel={{ ...panel, polygon: visualPolygon }}
+        mapper={mapper}
+        normal={normal}
+        selected={panel.id === selectedPanelId}
+        onSelect={onSelect}
+        color={color}
+        innerOffset={innerOffset}
+        thickness={thickness}
+      />
+    );
+  });
+}
+
+function CoordinatedFrame({
+  showStructure = true,
+  showRebar = false,
+  showFlashings = true,
+  thinPurlins = false,
+}: {
+  showStructure?: boolean;
+  showRebar?: boolean;
+  showFlashings?: boolean;
+  thinPurlins?: boolean;
+}) {
+  const { calculation, building, structural, flashingRalColor } = useProjectStore();
+  const assembly = calculation.assembly;
+  const flashingColor = ralHex(flashingRalColor);
+  const colorFor = (kind: (typeof assembly.members)[number]["kind"]) =>
+    kind === "opening-frame" || kind === "purlin" ? STEEL_DARK : STEEL;
+  return (
+    <group>
+      {showStructure && assembly.members.map((member) => (
+        <Member
+          key={member.id}
+          a={[toMeters(member.start.x), toMeters(member.start.y), toMeters(member.start.z)]}
+          b={[toMeters(member.end.x), toMeters(member.end.y), toMeters(member.end.z)]}
+          size={toMeters(
+            member.kind === "purlin" && thinPurlins
+              ? Math.max(
+                  30,
+                  Math.min(
+                    member.envelopeWidthMm,
+                    member.envelopeDepthMm,
+                  ) * 0.65,
+                )
+              : Math.max(member.envelopeWidthMm, member.envelopeDepthMm),
+          )}
+          color={colorFor(member.kind)}
+        />
+      ))}
+      {showStructure && assembly.basePlates.map((plate) => (
+        <mesh
+          key={plate.id}
+          position={[toMeters(plate.center.x), toMeters(plate.center.y), toMeters(plate.center.z)]}
+        >
+          <boxGeometry args={[toMeters(plate.size.x), toMeters(plate.size.y), toMeters(plate.size.z)]} />
+          <meshStandardMaterial color={STEEL_DARK} />
+        </mesh>
+      ))}
+      {showStructure && assembly.foundations.map((foundation) => (
+        <mesh
+          key={foundation.id}
+          position={[toMeters(foundation.center.x), toMeters(foundation.center.y), toMeters(foundation.center.z)]}
+        >
+          <boxGeometry args={[toMeters(foundation.size.x), toMeters(foundation.size.y), toMeters(foundation.size.z)]} />
+          <meshStandardMaterial
+            color={CONCRETE}
+            roughness={0.9}
+            transparent={false}
+            opacity={1}
+            depthWrite
+          />
+        </mesh>
+      ))}
+      {showFlashings && assembly.flashings.flatMap((flashing) =>
+        (() => {
+          const joint = assembly.joints.find(
+            (item) => item.id === flashing.jointId,
+          );
+          if (flashing.kind === "external-corner" && joint)
+            return [
+              <CornerFlashingMesh
+                key={flashing.id}
+                flashing={flashing}
+                joint={joint}
+                assembly={assembly}
+                color={flashingColor}
+              />,
+            ];
+          if (flashing.kind === "ridge" && joint)
+            return [
+              <RidgeFlashingMesh
+                key={flashing.id}
+                flashing={flashing}
+                joint={joint}
+                assembly={assembly}
+                color={flashingColor}
+              />,
+            ];
+          const surfaceIds = [
+            flashing.surfaceId ?? joint?.surfaceIds[0],
+          ].filter((value): value is string => Boolean(value));
+          return surfaceIds.flatMap((surfaceId) => {
+            const frame = assembly.surfaceFrames.find(
+              (item) => item.surfaceId === surfaceId,
+            );
+            const panel = assembly.panels.find(
+              (item) => item.surfaceId === surfaceId,
+            );
+            if (!frame || !panel) return [];
+            const normalOffset =
+              panel.innerOffsetMm +
+              panel.thicknessMm +
+              flashing.profile.thicknessMm;
+            const displayPoint = (point: {
+              x: number;
+              y: number;
+              z: number;
+            }): WorldPoint => [
+              toMeters(
+                point.x + frame.normal.x * normalOffset,
+              ),
+              toMeters(
+                point.y + frame.normal.y * normalOffset,
+              ),
+              toMeters(
+                point.z + frame.normal.z * normalOffset,
+              ),
+            ];
+            return flashing.path.slice(1).map((point, index) => (
+              <Member
+                key={`${flashing.id}-${surfaceId}-${index}`}
+                a={displayPoint(flashing.path[index])}
+                b={displayPoint(point)}
+                size={toMeters(
+                  Math.min(180, flashing.profile.visibleWidthMm),
+                )}
+                color={flashingColor}
+              />
+            ));
+          });
+        })(),
+      )}
+      {showStructure && showRebar && (
+        <FoundationRebar
+          frames={[
+            ...new Set(
+              assembly.members
+                .filter((member) => member.kind === "column")
+                .map((member) => toMeters(member.start.x)),
+            ),
+          ]}
+          half={toMeters(building.width) / 2}
+          length={toMeters(building.length)}
+          depth={toMeters(-assembly.levels.foundationBottomMm)}
+          stripWidth={calculation.structural.foundation.widthMm / 1000}
+          padSide={calculation.structural.foundation.widthMm / 1000}
+          padHeight={toMeters(-assembly.levels.foundationBottomMm)}
+          type={structural.foundationType}
+          coverMm={calculation.structural.foundation.coverMm}
+          stepMm={calculation.structural.foundation.rebarStepMm}
+          layers={calculation.structural.foundation.rebarLayers}
+        />
+      )}
+    </group>
+  );
 }
 
 function OpeningMesh({
@@ -414,7 +972,7 @@ function FoundationRebar({
       </group>
     );
   }
-  const top = 0.3 - cover;
+  const top = -cover;
   const bottom = -depth + cover;
   const lateral = Math.max(0.02, stripWidth / 2 - cover);
   const bars: React.ReactNode[] = [];
@@ -725,55 +1283,16 @@ function Model({
   showPanels?: boolean;
   showOpeningFrames?: boolean;
 }) {
-  const { building, roof: rawRoof, calculation, selectedSurfaceId, selectedPanelId, wallPanelSystem, roofPanelSystem, openings, structural } = useProjectStore();
-  const roof = resolveRoof(building, rawRoof);
-  const length = toMeters(building.length);
-  const width = toMeters(building.width);
-  const wallHeight = toMeters(building.wallHeight);
-  const highHeight = toMeters(roof.highSideHeight);
-  const ridgeHeight = toMeters(roof.ridgeHeight);
-  const gableOverhang = toMeters(roof.gableOverhang);
-  const eaveOverhang = toMeters(roof.eaveOverhang);
+  const { calculation, selectedSurfaceId, selectedPanelId, wallPanelSystem, roofPanelSystem, openings } = useProjectStore();
 
   const mapperFor = (surfaceId: string): Mapper => {
-    if (surfaceId === "wall-a") return (point) => [-length / 2 + toMeters(point.x), toMeters(point.y), -width / 2];
-    if (surfaceId === "wall-c") return (point) => [length / 2 - toMeters(point.x), toMeters(point.y), width / 2];
-    if (surfaceId === "wall-b") return (point) => [length / 2, toMeters(point.y), -width / 2 + toMeters(point.x)];
-    if (surfaceId === "wall-d") return (point) => [-length / 2, toMeters(point.y), width / 2 - toMeters(point.x)];
-
-    const roofX = (point: Point2D) => -length / 2 - gableOverhang + toMeters(point.x);
-    if (roof.type === "flat")
-      return (point) => [roofX(point), wallHeight, -width / 2 - eaveOverhang + toMeters(point.y)];
-    if (roof.type === "gable") {
-      const rise = ridgeHeight - wallHeight;
-      const baseSlope = Math.hypot(width / 2, rise);
-      const horizontalExtension = eaveOverhang * (width / 2) / baseSlope;
-      const verticalExtension = eaveOverhang * rise / baseSlope;
-      if (surfaceId === "roof-1")
-        return (point) => {
-          const distance = toMeters(point.y);
-          const ratio = distance / (baseSlope + eaveOverhang);
-          return [roofX(point), wallHeight - verticalExtension + ratio * (rise + verticalExtension), -width / 2 - horizontalExtension + ratio * (width / 2 + horizontalExtension)];
-        };
-      return (point) => {
-        const distance = toMeters(point.y);
-        const ratio = distance / (baseSlope + eaveOverhang);
-        return [roofX(point), wallHeight - verticalExtension + ratio * (rise + verticalExtension), width / 2 + horizontalExtension - ratio * (width / 2 + horizontalExtension)];
-      };
-    }
-
-    const frontHeight = roof.slopeDirection === "left-to-right" ? wallHeight : highHeight;
-    const backHeight = roof.slopeDirection === "left-to-right" ? highHeight : wallHeight;
-    const rise = highHeight - wallHeight;
-    const baseSlope = Math.hypot(width, rise);
-    const horizontalExtension = eaveOverhang * width / baseSlope;
-    const verticalExtension = eaveOverhang * rise / baseSlope;
-    const lowAtFront = frontHeight < backHeight;
+    const frame = calculation.assembly.surfaceFrames.find(
+      (item) => item.surfaceId === surfaceId,
+    );
+    if (!frame) throw new Error(`Не найден базис поверхности ${surfaceId}`);
     return (point) => {
-      const ratio = toMeters(point.y) / (baseSlope + 2 * eaveOverhang);
-      const startZ = lowAtFront ? -width / 2 - horizontalExtension : width / 2 + horizontalExtension;
-      const endZ = lowAtFront ? width / 2 + horizontalExtension : -width / 2 - horizontalExtension;
-      return [roofX(point), wallHeight - verticalExtension + ratio * (rise + 2 * verticalExtension), startZ + ratio * (endZ - startZ)];
+      const world = mapSurfacePoint(frame, point);
+      return [toMeters(world.x), toMeters(world.y), toMeters(world.z)];
     };
   };
 
@@ -803,8 +1322,8 @@ function Model({
           surface.type === "roof" ? roofPanelSystem : wallPanelSystem;
         const panelThickness = toMeters(system.thickness);
         const innerOffset = toMeters(
-          structural.panelOffsetMm +
-            (surface.type === "roof" ? 0 : structural.facadeVentGapMm),
+          calculation.assembly.panels.find((panel) => panel.surfaceId === surface.id)
+            ?.innerOffsetMm ?? 0,
         );
         const color = ralHex(
           surface.type === "roof"
@@ -823,6 +1342,7 @@ function Model({
                 />
                 <PanelSolids
                   panels={calculation.panels.filter((panel) => panel.surfaceId === surface.id)}
+                  surface={surface}
                   mapper={mapper}
                   selectedPanelId={selectedPanelId}
                   onSelect={selectIn3D}
@@ -864,10 +1384,9 @@ function Model({
   );
 }
 
-type ViewMode = "both" | "panels" | "frame";
+type ViewMode = "both" | "frame";
 const VIEW_MODES: { id: ViewMode; label: string }[] = [
   { id: "both", label: "Всё" },
-  { id: "panels", label: "Панели" },
   { id: "frame", label: "Каркас" },
 ];
 export function Building3D() {
@@ -890,14 +1409,18 @@ export function Building3D() {
         <color attach="background" args={["#eef2f5"]} />
         <ambientLight intensity={1.25} />
         <directionalLight position={[8, 14, 8]} intensity={1.8} castShadow />
-        <gridHelper args={[50, 50, "#9aa9b5", "#d3dbe1"]} />
         <Bounds fit clip observe margin={1.25}>
           <group>
             <Model
               showPanels={mode !== "frame"}
-              showOpeningFrames={mode !== "panels"}
+              showOpeningFrames={false}
             />
-            {mode !== "panels" && <Frame showRebar={mode === "frame"} />}
+            <CoordinatedFrame
+              showStructure
+              showRebar={false}
+              showFlashings={mode === "both"}
+              thinPurlins={mode === "frame"}
+            />
           </group>
         </Bounds>
         <OrbitControls makeDefault target={[0, 2, 0]} />

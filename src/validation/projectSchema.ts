@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { RAL_COLORS } from "../domain/ral";
+import type { ProjectInput, SavedProject } from "../domain/types";
+import { DEFAULT_FLASHING_RAL, RAL_COLORS } from "../domain/ral";
 import {
   defaultCommercial,
   defaultStructural,
@@ -91,6 +92,13 @@ export const projectSchema = z
       },
     ),
     roofPanelSystem: panel,
+    flashingRalColor: z
+      .string()
+      .refine(
+        (code) => RAL_COLORS.some((color) => color.code === code),
+        "Выберите цвет фасонных элементов из палитры RAL",
+      )
+      .default(DEFAULT_FLASHING_RAL),
     openings: z.array(
       z.object({
         id: z.string(),
@@ -161,3 +169,14 @@ export const projectSchema = z
         path: ["roof", "highSideHeight"],
       });
   });
+
+/** Reads both legacy v1 files and the coordinated v2 project envelope. */
+export function migrateSavedProject(value: unknown): ProjectInput {
+  if (!value || typeof value !== "object") throw new Error("Неверный формат проекта");
+  const raw = value as Partial<SavedProject>;
+  if (raw.formatVersion !== undefined && raw.formatVersion !== 1 && raw.formatVersion !== 2)
+    throw new Error(`Версия проекта ${String(raw.formatVersion)} не поддерживается`);
+  const parsed = projectSchema.safeParse(raw);
+  if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Неверный формат проекта");
+  return parsed.data;
+}

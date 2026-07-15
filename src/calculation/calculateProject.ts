@@ -6,8 +6,15 @@ import type {
   ProjectInput,
 } from "../domain/types";
 import { polygonArea } from "../geometry/core";
+import {
+  buildConstructionModel,
+  flashingSummaryFromInstances,
+} from "../geometry/constructionModel";
 import { applyOpeningsToPanels, openingIsValid } from "../geometry/openings";
-import { layoutPanelsOnSurface } from "../geometry/layout";
+import {
+  calculateSupportLines,
+  layoutPanelsOnSurface,
+} from "../geometry/layout";
 import { createBuildingSurfaces, resolveRoof } from "../geometry/surfaces";
 import { calculateStructural } from "./structural";
 const round = (n: number, t: number) => Math.round(n / t) * t;
@@ -96,6 +103,14 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
           s,
           s.type === "roof" ? input.roofPanelSystem : input.wallPanelSystem,
           input.calculationSettings,
+          {
+            supportLines:
+              s.type !== "roof" &&
+              input.wallPanelSystem.layoutDirection === "horizontal" &&
+              (s.id === "wall-a" || s.id === "wall-c")
+                ? calculateSupportLines(s.width, input.structural.columnStep)
+                : undefined,
+          },
         ),
       );
   panels = quickMode
@@ -174,6 +189,33 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
       message:
         "Р‘С‹СЃС‚СЂС‹Р№ СЂР°СЃС‡С‘С‚: СЃРјРµС‚Р° РїРѕР»СѓС‡РµРЅР° Р±РµР· РґРµС‚Р°Р»СЊРЅРѕР№ СЂР°СЃРєР»Р°РґРєРё РїР°РЅРµР»РµР№",
     });
+  const structural = calculateStructural(
+    input.building,
+    input.roof,
+    input.wallPanelSystem.thickness,
+    input.roofPanelSystem.thickness,
+    input.structural,
+    input.openings,
+  );
+  for (const message of structural.warnings)
+    warnings.push({
+      id: `structural-${message}`,
+      severity: "warning",
+      message,
+    });
+  const coordination = buildConstructionModel(
+    input,
+    surfaces,
+    panels,
+    structural,
+  );
+  for (const issue of coordination.issues)
+    warnings.push({
+      id: `coordination-${issue.id}`,
+      severity: issue.severity,
+      surfaceId: issue.surfaceId,
+      message: issue.message,
+    });
   const wallSurfaceArea = wallSurfaces.reduce(
       (s, v) => s + polygonArea(v.polygon),
       0,
@@ -210,40 +252,14 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
       input.calculationSettings.wallPricePerM2,
     roofCost =
       (roofSurfaceArea / 1e6) * input.calculationSettings.roofPricePerM2,
-    slope = roofSurfaces[0]?.height ?? 0,
-    roofLength = input.building.length + 2 * roof.gableOverhang,
-    // Высоты продольных фасадов: при односкатной крыше одна сторона выше,
-    // поэтому наружные углы считаются по фактическим высотам, а не 4×стена.
-    facadeAHeight = surfaces.find((s) => s.id === "wall-a")?.height ?? 0,
-    facadeCHeight = surfaces.find((s) => s.id === "wall-c")?.height ?? 0,
-    flashings = {
-      base: 2 * (input.building.length + input.building.width),
-      externalCorners: 2 * (facadeAHeight + facadeCHeight),
-      // Двускатная — конёк; односкатная — верхняя планка примыкания
-      // вдоль высокой стороны (тарифицируется как конёк).
-      ridge: roof.type === "flat" ? 0 : roofLength,
-      // Карнизы: двускатная — два, односкатная — один (низкая сторона),
-      // плоская — капельник/парапет по всему периметру стен.
-      eave:
-        roof.type === "flat"
-          ? 2 * (input.building.length + input.building.width)
-          : (roof.type === "gable" ? 2 : 1) * roofLength,
-      gable: roof.type === "flat" ? 0 : (roof.type === "gable" ? 4 : 2) * slope,
-      openings: input.openings.reduce(
-        (s, o) =>
-          s +
-          2 *
-            (o.width +
-              o.height +
-              2 * input.calculationSettings.openingClearanceMm),
-        0,
-      ),
-    },
+    flashings = flashingSummaryFromInstances(coordination.assembly.flashings),
     flashingFactor = 1 + input.calculationSettings.flashingReservePercent / 100,
     flashingCost =
       ((flashings.base / 1000) * input.calculationSettings.basePricePerM +
         (flashings.externalCorners / 1000) *
           input.calculationSettings.cornerPricePerM +
+        (flashings.wallJoints / 1000) *
+          input.calculationSettings.basePricePerM +
         (flashings.ridge / 1000) * input.calculationSettings.ridgePricePerM +
         (flashings.eave / 1000) * input.calculationSettings.eavePricePerM +
         (flashings.gable / 1000) * input.calculationSettings.gablePricePerM +
@@ -266,6 +282,7 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
   const flashingLenM =
     (flashings.base +
       flashings.externalCorners +
+      flashings.wallJoints +
       flashings.ridge +
       flashings.eave +
       flashings.gable +
@@ -328,26 +345,16 @@ export function calculateProject(input: ProjectInput): ProjectCalculation {
     total: subtotal + weatherReserve,
     mountDays: Math.max(1, Math.ceil(panelAreaM2 / productivity)),
   };
-  const structural = calculateStructural(
-    input.building,
-    input.roof,
-    input.wallPanelSystem.thickness,
-    input.roofPanelSystem.thickness,
-    input.structural,
-    input.openings,
-  );
-  for (const message of structural.warnings)
-    warnings.push({
-      id: `structural-${message}`,
-      severity: "warning",
-      message,
-    });
   return {
     surfaces,
     panels,
     groups,
     warnings,
     structural,
+    assembly: coordination.assembly,
+    joints: coordination.assembly.joints,
+    flashings: coordination.assembly.flashings,
+    coordinationIssues: coordination.issues,
     summary: {
       wallArea: wallSurfaceArea,
       roofArea: roofSurfaceArea,

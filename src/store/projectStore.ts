@@ -2,7 +2,11 @@ import { create } from "zustand";
 import { calculateProject } from "../calculation/calculateProject";
 import { defaultProject } from "../domain/defaultProject";
 import { panelSeriesDefaults } from "../domain/panelOptions";
-import { DEFAULT_ROOF_RAL, DEFAULT_WALL_RAL } from "../domain/ral";
+import {
+  DEFAULT_FLASHING_RAL,
+  DEFAULT_ROOF_RAL,
+  DEFAULT_WALL_RAL,
+} from "../domain/ral";
 import { regionById } from "../domain/regions";
 import type {
   Opening,
@@ -13,6 +17,7 @@ const KEY = "sandwich-panels-project-v2";
 const withPanelRules = (project: ProjectInput): ProjectInput => ({
   ...project,
   openings: project.openings ?? [],
+  flashingRalColor: project.flashingRalColor ?? DEFAULT_FLASHING_RAL,
   structural: { ...defaultProject.structural, ...project.structural },
   wallPanelSystem: {
     ...panelSeriesDefaults(project.wallPanelSystem.series ?? "wall-z-lock"),
@@ -89,6 +94,7 @@ function projectOf(s: State): ProjectInput {
     roof: s.roof,
     wallPanelSystem: s.wallPanelSystem,
     roofPanelSystem: s.roofPanelSystem,
+    flashingRalColor: s.flashingRalColor,
     openings: s.openings,
     calculationSettings: s.calculationSettings,
     commercial: s.commercial,

@@ -1,5 +1,6 @@
 import type { ProjectCalculation, ProjectInput } from "../domain/types";
 import { resolveRoof } from "../geometry/surfaces";
+import { mapSurfacePoint } from "../geometry/constructionModel";
 
 type Ctx = CanvasRenderingContext2D;
 const W = 1754;
@@ -142,12 +143,10 @@ function kmPlanSheet(
   ctx.strokeStyle = STEEL;
   ctx.lineWidth = 5;
   ctx.strokeRect(x0, y0, pw, ph);
-  const bays = Math.max(
-    1,
-    Math.ceil(input.building.length / input.structural.columnStep),
-  );
-  for (let i = 0; i <= bays; i++) {
-    const x = x0 + (pw * i) / bays;
+  const columns = calc.assembly.members.filter((member) => member.kind === "column");
+  const frameXs = [...new Set(columns.map((column) => column.start.x))].sort((a, b) => a - b);
+  for (const worldX of frameXs) {
+    const x = x0 + ((worldX + input.building.length / 2) / input.building.length) * pw;
     ctx.strokeStyle = "#95a5b1";
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -158,9 +157,9 @@ function kmPlanSheet(
     ctx.fillRect(x - 7, y0 - 7, 14, 14);
     ctx.fillRect(x - 7, y0 + ph - 7, 14, 14);
   }
-  const purlinCount = Math.max(2, calc.structural.purlin.linesPerSlope);
-  for (let i = 0; i < purlinCount; i++) {
-    const y = y0 + (ph * i) / Math.max(1, purlinCount - 1);
+  const purlins = calc.assembly.members.filter((member) => member.kind === "purlin");
+  for (const purlin of purlins) {
+    const y = y0 + ((purlin.start.z + input.building.width / 2) / input.building.width) * ph;
     ctx.strokeStyle = "#718493";
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -198,60 +197,45 @@ function sectionSheet(
     object,
     date,
   );
-  const roof = resolveRoof(input.building, input.roof);
   const x0 = 220;
   const baseY = 900;
   const span = 950;
   const wallPx = 430;
-  const risePx =
-    roof.type === "flat"
-      ? 0
-      : ((roof.type === "gable" ? roof.ridgeHeight : roof.highSideHeight) -
-          input.building.wallHeight) /
-        8;
+  const maxY = Math.max(1, calc.assembly.levels.ridgeTopMm);
+  const px = (z: number) => x0 + ((z + input.building.width / 2) / input.building.width) * span;
+  const py = (y: number) => baseY - (y / maxY) * (wallPx + 180);
+  const frameX = Math.min(
+    ...calc.assembly.members
+      .filter((member) => member.kind === "column")
+      .map((member) => member.start.x),
+  );
+  const sectionMembers = calc.assembly.members.filter(
+    (member) =>
+      member.kind !== "purlin" &&
+      member.kind !== "opening-frame" &&
+      Math.abs(member.start.x - frameX) < 0.1 &&
+      Math.abs(member.end.x - frameX) < 0.1,
+  );
   ctx.strokeStyle = STEEL;
-  ctx.lineWidth = 18;
-  ctx.beginPath();
-  ctx.moveTo(x0, baseY);
-  ctx.lineTo(x0, baseY - wallPx);
-  ctx.moveTo(x0 + span, baseY);
-  ctx.lineTo(x0 + span, baseY - wallPx);
-  ctx.stroke();
-  const leftTop = baseY - wallPx;
-  const rightTop =
-    roof.type === "mono" ? leftTop - risePx : baseY - wallPx;
-  ctx.lineWidth = 12;
-  ctx.beginPath();
-  if (roof.type === "gable") {
-    ctx.moveTo(x0, leftTop);
-    ctx.lineTo(x0 + span / 2, leftTop - risePx);
-    ctx.lineTo(x0 + span, leftTop);
-    ctx.moveTo(x0, leftTop);
-    ctx.lineTo(x0 + span, leftTop);
-  } else {
-    ctx.moveTo(x0, leftTop);
-    ctx.lineTo(x0 + span, rightTop);
+  for (const member of sectionMembers) {
+    ctx.lineWidth = Math.max(5, member.envelopeWidthMm / 15);
+    ctx.beginPath();
+    ctx.moveTo(px(member.start.z), py(member.start.y));
+    ctx.lineTo(px(member.end.z), py(member.end.y));
+    ctx.stroke();
   }
-  ctx.stroke();
   ctx.strokeStyle = PANEL;
-  ctx.lineWidth = Math.max(12, input.roofPanelSystem.thickness / 5);
-  ctx.beginPath();
-  if (roof.type === "gable") {
-    ctx.moveTo(x0 - 25, leftTop - 28);
-    ctx.lineTo(x0 + span / 2, leftTop - risePx - 28);
-    ctx.lineTo(x0 + span + 25, leftTop - 28);
-  } else {
-    ctx.moveTo(x0 - 25, leftTop - 28);
-    ctx.lineTo(x0 + span + 25, rightTop - 28);
+  for (const surface of calc.surfaces) {
+    const frame = calc.assembly.surfaceFrames.find((item) => item.surfaceId === surface.id);
+    if (!frame || (surface.id !== "wall-a" && surface.id !== "wall-c" && surface.type !== "roof")) continue;
+    const a = mapSurfacePoint(frame, { x: surface.width / 2, y: 0 });
+    const b = mapSurfacePoint(frame, { x: surface.width / 2, y: surface.height });
+    ctx.lineWidth = Math.max(8, (surface.type === "roof" ? input.roofPanelSystem.thickness : input.wallPanelSystem.thickness) / 5);
+    ctx.beginPath();
+    ctx.moveTo(px(a.z), py(a.y));
+    ctx.lineTo(px(b.z), py(b.y));
+    ctx.stroke();
   }
-  ctx.stroke();
-  ctx.lineWidth = Math.max(12, input.wallPanelSystem.thickness / 5);
-  ctx.beginPath();
-  ctx.moveTo(x0 - 34, baseY);
-  ctx.lineTo(x0 - 34, leftTop);
-  ctx.moveTo(x0 + span + 34, baseY);
-  ctx.lineTo(x0 + span + 34, rightTop);
-  ctx.stroke();
   text(ctx, 1280, 210, "Расчётные размеры", true);
   [
     `Вынос панели: ${input.structural.panelOffsetMm} мм.`,
@@ -286,13 +270,11 @@ function foundationSheet(
   ctx.lineWidth = 36;
   if (f.type === "strip") ctx.strokeRect(planX, planY, planW, planH);
   else {
-    const bays = Math.max(1, Math.ceil(input.building.length / input.structural.columnStep));
-    for (let i = 0; i <= bays; i++) {
-      const x = planX + (planW * i) / bays;
-      for (const y of [planY, planY + planH]) {
+    for (const foundation of calc.assembly.foundations) {
+      const x = planX + ((foundation.center.x + input.building.length / 2) / input.building.length) * planW;
+      const y = planY + ((foundation.center.z + input.building.width / 2) / input.building.width) * planH;
         ctx.fillStyle = CONCRETE;
         ctx.fillRect(x - 28, y - 28, 56, 56);
-      }
     }
   }
   ctx.strokeStyle = REBAR;
@@ -356,6 +338,8 @@ function scheduleSheet(
     ["Колонны", `${calc.structural.column.count} шт`, calc.structural.column.section],
     ["Фермы", `${calc.structural.truss.count} шт`, `${calc.structural.truss.topChord} / ${calc.structural.truss.diagonals}`],
     ["Прогоны покрытия", `${calc.structural.purlin.totalLengthM.toFixed(1)} м`, calc.structural.purlin.profile],
+    ["Фасонные элементы", `${calc.flashings.length} поз.`, input.flashingRalColor],
+    ["Межколонные нащельники", `${(calc.summary.flashings.wallJoints / 1000).toFixed(1)} м`, `${calc.flashings.filter((item) => item.kind === "transverse-seam").length} поз.`],
     ["Усиление проёмов", `${calc.structural.openingFrames.totalLengthM.toFixed(1)} м`, calc.structural.openingFrames.profiles],
     ["Бетон", `${calc.structural.foundation.volumeM3.toFixed(2)} м³`, calc.structural.foundation.concrete],
     ["Арматура", `${calc.structural.foundation.rebarMassKg.toFixed(0)} кг`, `${calc.structural.foundation.mainRebar}; ${calc.structural.foundation.stirrups}`],

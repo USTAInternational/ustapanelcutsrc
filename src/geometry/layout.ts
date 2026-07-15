@@ -48,6 +48,14 @@ export function calculateSplitLengths(
   return lengths;
 }
 
+/** Column/support axes distributed exactly over the building dimension. */
+export function calculateSupportLines(sizeMm: number, preferredStepMm: number) {
+  const bays = Math.max(1, Math.ceil(sizeMm / Math.max(500, preferredStepMm)));
+  return Array.from({ length: bays + 1 }, (_, index) =>
+    (index * sizeMm) / bays,
+  );
+}
+
 function splitPolygonByLength(
   polygon: Point2D[],
   vertical: boolean,
@@ -106,6 +114,7 @@ export function layoutPanelsOnSurface(
     CalculationSettings,
     "mountingGapMm" | "thermalGapMm" | "quickMode"
   >,
+  options?: { supportLines?: number[] },
 ): PanelPiece[] {
   if (settings?.quickMode)
     return [];
@@ -135,16 +144,35 @@ export function layoutPanelsOnSurface(
       : bounds(a).minY - bounds(b).minY,
   );
   const maxLength = Math.min(12000, Math.max(2000, sys.maxLength));
-  const pieces = raw.flatMap((sourceStripPolygon, stripIndex) =>
-    splitPolygonByLength(sourceStripPolygon, vertical, maxLength).map(
-      (polygon, partIndex) => ({
-        polygon,
-        sourceStripPolygon,
-        stripIndex,
-        partIndex,
-      }),
-    ),
-  );
+  const supportLines = [...new Set(options?.supportLines ?? [])]
+    .filter((value) => value >= -GEOMETRY_EPSILON && value <= surface.width + GEOMETRY_EPSILON)
+    .sort((a, b) => a - b);
+  const pieces = raw.flatMap((fullStripPolygon, stripIndex) => {
+    const supportSegments =
+      !vertical && supportLines.length >= 2
+        ? supportLines.slice(0, -1).flatMap((line, index) => {
+            const segment = clipPolygonByVerticalStrip(
+              fullStripPolygon,
+              line,
+              supportLines[index + 1],
+            );
+            return segment.length >= 3 && polygonArea(segment) > GEOMETRY_EPSILON
+              ? [segment]
+              : [];
+          })
+        : [fullStripPolygon];
+    let partIndex = 0;
+    return supportSegments.flatMap((sourceStripPolygon) =>
+      splitPolygonByLength(sourceStripPolygon, vertical, maxLength).map(
+        (polygon) => ({
+          polygon,
+          sourceStripPolygon,
+          stripIndex,
+          partIndex: partIndex++,
+        }),
+      ),
+    );
+  });
   return pieces.map(({ polygon, sourceStripPolygon, stripIndex, partIndex }) => {
     const b = bounds(polygon),
       actual = vertical ? b.maxX - b.minX : b.maxY - b.minY,

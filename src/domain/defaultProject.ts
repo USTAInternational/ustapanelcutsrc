@@ -3,7 +3,11 @@ import type {
   ProjectInput,
   StructuralSettings,
 } from "./types";
-import { DEFAULT_ROOF_RAL, DEFAULT_WALL_RAL } from "./ral";
+import {
+  DEFAULT_FLASHING_RAL,
+  DEFAULT_ROOF_RAL,
+  DEFAULT_WALL_RAL,
+} from "./ral";
 import { DEFAULT_REGION_ID } from "./regions";
 export const defaultStructural: StructuralSettings = {
   regionId: DEFAULT_REGION_ID,
@@ -72,6 +76,7 @@ export const defaultProject: ProjectInput = {
     manualOffset: 0,
     minimumEdgeWidth: 300,
   },
+  flashingRalColor: DEFAULT_FLASHING_RAL,
   openings: [],
   calculationSettings: {
     reservePercent: 5,
