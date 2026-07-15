@@ -259,12 +259,10 @@ function CornerFlashingSolid({
           color={color}
           roughness={0.42}
           metalness={0.38}
-          emissive="#2b1511"
-          emissiveIntensity={0.12}
         />
       </mesh>
       <lineSegments geometry={edges} renderOrder={6}>
-        <lineBasicMaterial color="#382622" depthTest />
+        <lineBasicMaterial color={color} depthTest />
       </lineSegments>
     </group>
   );
@@ -465,26 +463,20 @@ function SurfaceMesh({ surface, mapper, selected, color }: { surface: Surface; m
     result.computeVertexNormals();
     return result;
   }, [surface, mapper]);
-  const edges = useMemo(() => new EdgesGeometry(geometry), [geometry]);
   return (
-    <group>
-      <mesh geometry={geometry}>
-        <meshStandardMaterial
-          color={color}
-          emissive={selected ? "#2169a1" : "#000000"}
-          emissiveIntensity={selected ? 0.28 : 0}
-          side={DoubleSide}
-          roughness={0.92}
-          transparent
-          opacity={0.18}
-          depthWrite
-          depthTest
-        />
-      </mesh>
-      <lineSegments geometry={edges} renderOrder={3}>
-        <lineBasicMaterial color="#233746" depthTest depthWrite />
-      </lineSegments>
-    </group>
+    <mesh geometry={geometry}>
+      <meshStandardMaterial
+        color={color}
+        emissive={selected ? "#2169a1" : "#000000"}
+        emissiveIntensity={selected ? 0.28 : 0}
+        side={DoubleSide}
+        roughness={0.92}
+        transparent
+        opacity={0.18}
+        depthWrite
+        depthTest
+      />
+    </mesh>
   );
 }
 
