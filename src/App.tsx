@@ -25,7 +25,7 @@ import { projectSchema } from "./validation/projectSchema";
 export default function App() {
   const user = useAuthStore((v) => v.user);
   const s = useProjectStore(),
-    [left, setLeft] = useState(true),
+    [parametersOpen, setParametersOpen] = useState(true),
     [right, setRight] = useState(true),
     [profileOpen, setProfileOpen] = useState(false),
     file = useRef<HTMLInputElement>(null),
@@ -71,7 +71,12 @@ export default function App() {
           </div>
         </div>
         <div className="header-actions">
-          <button onClick={() => setLeft((v) => !v)}>Параметры</button>
+          <button
+            className={parametersOpen ? "active-control" : ""}
+            onClick={() => setParametersOpen((v) => !v)}
+          >
+            Параметры
+          </button>
           <button onClick={() => exportJson(input)}>JSON</button>
           <button onClick={() => file.current?.click()}>Загрузить</button>
           <input
@@ -121,10 +126,7 @@ export default function App() {
         </div>
       </header>
       {profileOpen && <ProfileDialog onClose={() => setProfileOpen(false)} />}
-      <main className={`${left ? "" : "left-off"} ${right ? "" : "right-off"}`}>
-        <aside className="left-panel">
-          <ProjectForms />
-        </aside>
+      <main className={right ? "" : "right-off"}>
         <section className="workspace">
           <nav className="tabs">
             <button
@@ -270,6 +272,12 @@ export default function App() {
           </div>
         </aside>
       </main>
+      <section
+        className={parametersOpen ? "parameter-dock" : "parameter-dock is-closed"}
+        aria-label="Параметры проекта"
+      >
+        <ProjectForms />
+      </section>
       <footer>
         Предварительный расчет. Не заменяет проектную документацию.
       </footer>
