@@ -35,6 +35,13 @@ describe("валидация проекта", () => {
         },
       }).success,
     ).toBe(false));
+  it("отклоняет неизвестный RAL фасонных элементов", () =>
+    expect(
+      projectSchema.safeParse({
+        ...defaultProject,
+        flashingRalColor: "RAL 0000",
+      }).success,
+    ).toBe(false));
   it("принимает все поддерживаемые утеплители", () => {
     for (const insulation of ["eps", "basalt", "pir"] as const) {
       expect(

@@ -1,4 +1,13 @@
-import type { Opening, PanelPiece, Surface } from "../domain/types";
+import type {
+  AssemblyPanel,
+  FlashingInstance,
+  JointInstance,
+  Opening,
+  PanelPiece,
+  Point3D,
+  Surface,
+  SurfaceFrame,
+} from "../domain/types";
 
 /*
  * Генерация SVG-чертежа поверхности без React/DOM-вкладок.
@@ -15,9 +24,14 @@ const uniqSorted = (values: number[]) =>
 
 export interface SurfaceSvgOptions {
   panelFill: string;
+  flashingStroke?: string;
   showMarks?: boolean;
   showDimensions?: boolean;
   title?: string;
+  assemblyPanels?: AssemblyPanel[];
+  flashings?: FlashingInstance[];
+  joints?: JointInstance[];
+  frame?: SurfaceFrame;
 }
 
 export function buildSurfaceSvg(
@@ -26,9 +40,14 @@ export function buildSurfaceSvg(
   openings: Opening[],
   {
     panelFill,
+    flashingStroke = "#625555",
     showMarks = true,
     showDimensions = true,
     title,
+    assemblyPanels = [],
+    flashings = [],
+    joints = [],
+    frame,
   }: SurfaceSvgOptions,
 ): string {
   const parts: string[] = [];
@@ -61,17 +80,53 @@ export function buildSurfaceSvg(
     `<path d="${path(surface.polygon)}" fill="#f4f7fa" stroke="#33475a" stroke-width="30"/>`,
   );
   // Панели
+  const assemblyPanelById = new Map(
+    assemblyPanels.map((item) => [item.panelId, item]),
+  );
   for (const p of panels) {
+    const polygon =
+      assemblyPanelById.get(p.id)?.installationPolygon ?? p.polygon;
+    if (!polygon.length) continue;
     parts.push(
-      `<path d="${path(p.polygon)}" fill="${panelFill}" fill-opacity="0.85" stroke="#3d566b" stroke-width="10"/>`,
+      `<path d="${path(polygon)}" fill="${panelFill}" fill-opacity="0.85" stroke="#3d566b" stroke-width="10"/>`,
     );
     if (showMarks) {
-      const xs = p.polygon.map((v) => v.x);
-      const ys = p.polygon.map((v) => v.y);
+      const xs = polygon.map((v) => v.x);
+      const ys = polygon.map((v) => v.y);
       const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
       const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
       text(cx, -cy + 60, p.mark, 190, { weight: "bold", fill: "#15364f" });
     }
+  }
+  const project = (point: Point3D) => {
+    if (!frame) return { x: 0, y: 0 };
+    const dx = point.x - frame.origin.x;
+    const dy = point.y - frame.origin.y;
+    const dz = point.z - frame.origin.z;
+    return {
+      x: dx * frame.uAxis.x + dy * frame.uAxis.y + dz * frame.uAxis.z,
+      y: dx * frame.vAxis.x + dy * frame.vAxis.y + dz * frame.vAxis.z,
+    };
+  };
+  const surfaceJointIds = new Set(
+    joints.filter((joint) => joint.surfaceIds.includes(surface.id)).map((joint) => joint.id),
+  );
+  for (const joint of joints.filter(
+    (item) => item.surfaceIds.includes(surface.id) && item.voidIds.length > 0,
+  )) {
+    const points = joint.path.map(project);
+    if (points.length < 2) continue;
+    parts.push(
+      `<polyline points="${points.map((point) => `${point.x},${-point.y}`).join(" ")}" fill="none" stroke="#ffffff" stroke-width="${Math.max(12, joint.clearanceMm)}" stroke-dasharray="80 50"/>`,
+    );
+  }
+  for (const flashing of flashings.filter((item) => surfaceJointIds.has(item.jointId))) {
+    const points = flashing.path.map(project);
+    if (points.length < 2) continue;
+    parts.push(
+      `<polyline points="${points.map((point) => `${point.x},${-point.y}`).join(" ")}" fill="none" stroke="${flashingStroke}" stroke-width="${flashing.profile.visibleWidthMm}"/>`,
+    );
+    text(points[0].x + 100, -points[0].y - 100, flashing.mark, 130, { fill: "#a85820", weight: "bold" });
   }
   // Проёмы: белый прямоугольник + диагонали + размер
   for (const o of openings) {
@@ -99,8 +154,9 @@ export function buildSurfaceSvg(
     const xs: number[] = [0, surface.width];
     const ys: number[] = [0, surface.height];
     for (const p of panels) {
-      xs.push(...p.polygon.map((v) => v.x));
-      ys.push(...p.polygon.map((v) => v.y));
+      const polygon = assemblyPanelById.get(p.id)?.installationPolygon ?? p.polygon;
+      xs.push(...polygon.map((v) => v.x));
+      ys.push(...polygon.map((v) => v.y));
     }
     const ex = uniqSorted(xs);
     const ey = uniqSorted(ys);

@@ -113,12 +113,22 @@ const Select = ({
     </select>
   </label>
 );
-function RalPalette({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function RalPalette({
+  value,
+  onChange,
+  label = "Цвет RAL",
+  dialogHint = "Выберите оттенок панели",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  label?: string;
+  dialogHint?: string;
+}) {
   const selected = RAL_COLORS.find((color) => color.code === value) ?? RAL_COLORS[0];
   const dialogRef = useRef<HTMLDialogElement>(null);
   return (
     <div className="field ral-field">
-      <span>Цвет RAL</span>
+      <span>{label}</span>
       <button
         type="button"
         className="ral-selected"
@@ -137,7 +147,7 @@ function RalPalette({ value, onChange }: { value: string; onChange: (value: stri
       >
         <div className="ral-dialog-card">
           <header className="ral-dialog-header">
-            <div><strong>Цвет RAL</strong><small>Выберите оттенок панели</small></div>
+            <div><strong>{label}</strong><small>{dialogHint}</small></div>
             <button type="button" onClick={() => dialogRef.current?.close()} aria-label="Закрыть">×</button>
           </header>
           <div className="ral-dialog-palette" role="listbox" aria-label="Палитра цветов RAL">
@@ -581,6 +591,20 @@ export function ProjectForms() {
         <div className={activeSection === "panels" ? "parameter-group active" : "parameter-group"}>
           <PanelForm kind="wallPanelSystem" title="Стеновые панели" />
           <PanelForm kind="roofPanelSystem" title="Кровельные панели" />
+          <section>
+            <h3>Фасонные элементы</h3>
+            <RalPalette
+              value={s.flashingRalColor}
+              onChange={(flashingRalColor) =>
+                s.update("flashingRalColor", flashingRalColor)
+              }
+              label="Цвет фасонных элементов"
+              dialogHint="Выберите оттенок планок, углов и конька"
+            />
+            <small className="field-hint">
+              Применяется к углам, нащельникам, коньку, карнизам и обрамлениям.
+            </small>
+          </section>
         </div>
         <div className={activeSection === "openings" ? "parameter-group active" : "parameter-group"}>
           <OpeningsForm />

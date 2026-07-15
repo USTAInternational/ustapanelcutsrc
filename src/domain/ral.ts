@@ -27,4 +27,5 @@ export const RAL_COLORS: RalColor[] = [
 
 export const DEFAULT_WALL_RAL = "RAL 9003";
 export const DEFAULT_ROOF_RAL = "RAL 7016";
+export const DEFAULT_FLASHING_RAL = "RAL 8017";
 export const ralHex = (code: string) => RAL_COLORS.find((color) => color.code === code)?.hex ?? "#CBD0CC";

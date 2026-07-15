@@ -35,6 +35,13 @@ export function CombinedUnfolding() {
   const wallRal = useProjectStore((state) => state.wallPanelSystem.ralColor);
   const roofRal = useProjectStore((state) => state.roofPanelSystem.ralColor);
   const [showMarks, setShowMarks] = useState(true);
+  const assemblyPanelById = useMemo(
+    () =>
+      new Map(
+        calculation.assembly.panels.map((item) => [item.panelId, item]),
+      ),
+    [calculation.assembly.panels],
+  );
 
   const placements = useMemo(() => {
     const get = (id: string) =>
@@ -98,7 +105,11 @@ export function CombinedUnfolding() {
               className="surface-outline"
             />
             {panelsBySurface(surface.id).map((panel: PanelPiece) => {
-              const center = polygonCenter(panel.polygon);
+              const polygon =
+                assemblyPanelById.get(panel.id)?.installationPolygon ??
+                panel.polygon;
+              if (!polygon.length) return null;
+              const center = polygonCenter(polygon);
               const panelColor = ralHex(
                 surface.type === "roof" ? roofRal : wallRal,
               );
@@ -109,7 +120,7 @@ export function CombinedUnfolding() {
                   onClick={() => selectPanel(panel.id)}
                 >
                   <path
-                    d={shiftedPath(panel.polygon, x, y)}
+                    d={shiftedPath(polygon, x, y)}
                     className="panel-shape"
                     style={{
                       fill:

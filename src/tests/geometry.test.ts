@@ -142,7 +142,7 @@ describe("проемы и итоги", () => {
     // Две горизонтальные заготовки 6 × 1 м не уменьшаются из-за окна.
     expect(affected.reduce((s, p) => s + p.blankArea, 0)).toBe(12_000_000);
   });
-  it("автоматически делит панель длиннее 12 м", () => {
+  it("делит горизонтальные панели по пролётам между колоннами", () => {
     const c = calculateProject({
       ...structuredClone(defaultProject),
       building: { ...defaultProject.building, length: 25000 },
@@ -150,8 +150,9 @@ describe("проемы и итоги", () => {
     const lowerRow = c.panels
       .filter((panel) => panel.surfaceId === "wall-a" && panel.positionY === 0)
       .sort((a, b) => a.positionX - b.positionX);
+    // 25 м при заданном шаге 6 м образуют 5 равных координационных пролётов.
     expect(lowerRow.map((panel) => panel.maximumLength)).toEqual([
-      12000, 11000, 2000,
+      5000, 5000, 5000, 5000, 5000,
     ]);
     expect(lowerRow.every((panel) => !panel.lengthExceeded)).toBe(true);
   });

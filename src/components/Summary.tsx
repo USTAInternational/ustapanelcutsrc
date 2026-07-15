@@ -5,7 +5,10 @@ const area = (n: number) => `${(n / 1e6).toFixed(2)} м²`,
   money = (n: number) => n.toLocaleString("ru-RU", { maximumFractionDigits: 0 }),
   qty = (n: number) => n.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
 export function Summary() {
-  const { summary, warnings } = useProjectStore((s) => s.calculation);
+  const calculation = useProjectStore((s) => s.calculation);
+  const setTab = useProjectStore((s) => s.setTab);
+  const selectPanel = useProjectStore((s) => s.selectPanel);
+  const { summary, warnings } = calculation;
   const est = summary.estimate;
   const estRow = (r: EstimateLine, i: number) => (
     <tr key={`${r.section}-${r.name}-${i}`}>
@@ -48,11 +51,45 @@ export function Summary() {
       <div className="flashings">
         <span>Цоколь: {len(summary.flashings.base)}</span>
         <span>Углы: {len(summary.flashings.externalCorners)}</span>
+        <span>Межколонные нащельники: {len(summary.flashings.wallJoints)}</span>
         <span>Конек: {len(summary.flashings.ridge)}</span>
         <span>Карнизы: {len(summary.flashings.eave)}</span>
         <span>Торцы: {len(summary.flashings.gable)}</span>
         <span>Обрамление проёмов: {len(summary.flashings.openings)}</span>
       </div>
+      <h3>Координация модели</h3>
+      <div className="flashings">
+        <span>Узлы: {calculation.joints.length}</span>
+        <span>Фасонные детали: {calculation.flashings.length}</span>
+        <span>Технологические пустоты: {calculation.assembly.voids.length}</span>
+        <span>
+          Статус выпуска: {calculation.assembly.documentationBlocked ? "только эскиз" : "рабочий выпуск"}
+        </span>
+      </div>
+      {calculation.coordinationIssues.length > 0 && (
+        <ul className="warnings">
+          {calculation.coordinationIssues.map((issue) => (
+            <li
+              key={issue.id}
+              className={issue.severity}
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                const panel = calculation.assembly.panels.find((item) =>
+                  issue.objectIds.includes(item.id),
+                );
+                if (panel) selectPanel(panel.panelId);
+                setTab(issue.surfaceId ?? "3d");
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.click();
+              }}
+            >
+              {issue.message}
+            </li>
+          ))}
+        </ul>
+      )}
       <h3>Смета</h3>
       <table className="estimate-table">
         <thead>

@@ -9,7 +9,7 @@ import { Specification } from "./components/Specification";
 import { StructuralTab } from "./components/StructuralTab";
 import { Summary } from "./components/Summary";
 import { SurfaceDrawing } from "./components/SurfaceDrawing";
-import type { ProjectInput, SavedProject } from "./domain/types";
+import type { ProjectInput } from "./domain/types";
 import { ralHex } from "./domain/ral";
 import { insulationLabel } from "./domain/panelOptions";
 import {
@@ -20,7 +20,7 @@ import {
   exportSvg,
 } from "./export/files";
 import { useProjectStore } from "./store/projectStore";
-import { projectSchema } from "./validation/projectSchema";
+import { migrateSavedProject } from "./validation/projectSchema";
 
 export default function App() {
   const user = useAuthStore((v) => v.user);
@@ -31,11 +31,15 @@ export default function App() {
     file = useRef<HTMLInputElement>(null),
     surface = s.calculation.surfaces.find((v) => v.id === s.activeTab),
     panel = s.calculation.panels.find((v) => v.id === s.selectedPanelId),
+    assemblyPanel = s.calculation.assembly.panels.find(
+      (v) => v.panelId === s.selectedPanelId,
+    ),
     input: ProjectInput = {
       building: s.building,
       roof: s.roof,
       wallPanelSystem: s.wallPanelSystem,
       roofPanelSystem: s.roofPanelSystem,
+      flashingRalColor: s.flashingRalColor,
       openings: s.openings,
       calculationSettings: s.calculationSettings,
       commercial: s.commercial,
@@ -48,10 +52,8 @@ export default function App() {
   }, [user, patchCommercial]);
   const importFile = async (f: File) => {
     try {
-      const raw = JSON.parse(await f.text()) as SavedProject;
-      const parsed = projectSchema.safeParse(raw);
-      if (!parsed.success) throw new Error(parsed.error.issues[0]?.message);
-      s.replaceProject(parsed.data);
+      const raw = JSON.parse(await f.text()) as unknown;
+      s.replaceProject(migrateSavedProject(raw));
       alert("Проект загружен");
     } catch (e) {
       alert(
@@ -104,7 +106,7 @@ export default function App() {
             className="primary"
             onClick={() => exportPdf(input, s.calculation)}
           >
-            PDF
+            {s.calculation.assembly.documentationBlocked ? "PDF (эскиз)" : "PDF"}
           </button>
           <button onClick={() => s.reset()}>Новый</button>
           <button onClick={() => setRight((v) => !v)}>Свойства</button>
@@ -239,6 +241,20 @@ export default function App() {
                 <dd>{Math.round(panel.rightLength)} мм</dd>
                 <dt>Макс. длина</dt>
                 <dd>{Math.round(panel.maximumLength)} мм</dd>
+                {assemblyPanel?.supportSpan && (
+                  <>
+                    <dt>Между осями колонн</dt>
+                    <dd>{Math.round(assemblyPanel.supportSpan.axisLengthMm)} мм</dd>
+                    <dt>Длина с угловым выпуском</dt>
+                    <dd>{Math.round(assemblyPanel.supportSpan.fabricationLengthMm)} мм</dd>
+                    <dt>Видимая между планками</dt>
+                    <dd>{Math.round(assemblyPanel.supportSpan.visibleLengthMm)} мм</dd>
+                    <dt>Перекрытие фасонными</dt>
+                    <dd>
+                      {Math.round(assemblyPanel.supportSpan.startCoverMm)} + {Math.round(assemblyPanel.supportSpan.endCoverMm)} мм
+                    </dd>
+                  </>
+                )}
                 <dt>Видимая площадь</dt>
                 <dd>{(panel.visibleArea / 1e6).toFixed(3)} м²</dd>
                 <dt>Заготовка</dt>
