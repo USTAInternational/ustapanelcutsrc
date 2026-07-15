@@ -8,8 +8,8 @@ This document guides the new team (codex) through taking over the USTA BIM codeb
 
 ### 0. Clone and Setup
 ```bash
-git clone https://github.com/ustainternational/ustapanelcutsrc.git
-cd ustapanelcutsrc
+git clone https://github.com/USTAInternational/ustaBIM.online_Panels.git
+cd ustaBIM.online_Panels
 git checkout claude/construction-page-gmail-auth-t7gldb
 
 npm install
@@ -28,7 +28,7 @@ Visit http://localhost:5173
 6. (TODO) Export **PDF sketches** (эскизный проект, 9 sheets A3)
 
 ### 2. Key Repositories and Branches
-- **Repo**: ustainternational/ustapanelcutsrc
+- **Repo**: USTAInternational/ustaBIM.online_Panels
 - **Working branch**: `claude/construction-page-gmail-auth-t7gldb`
 - **Default branch**: `main` (not yet merged; currently PR #1 in draft)
 - **Vercel preview**: auto-deployed from PR
@@ -46,7 +46,7 @@ Visit http://localhost:5173
 ## Project Structure Overview
 
 ```
-ustapanelcutsrc/
+ustaBIM.online_Panels/
 ├── src/
 │   ├── domain/                 # Types & catalogs
 │   │   ├── types.ts            # Main Project type & StructuralSettings
