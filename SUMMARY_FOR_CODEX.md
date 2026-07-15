@@ -48,8 +48,8 @@ A fully functional **sandwich-panel structural calculator** for buildings in Kyr
 ## Quick Start for Codex
 
 ```bash
-git clone https://github.com/ustainternational/ustapanelcutsrc.git
-cd ustapanelcutsrc
+git clone https://github.com/USTAInternational/ustaBIM.online_Panels.git
+cd ustaBIM.online_Panels
 git checkout claude/construction-page-gmail-auth-t7gldb
 
 npm install
