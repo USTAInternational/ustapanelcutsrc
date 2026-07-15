@@ -451,10 +451,39 @@ function StructuralForm() {
 export function ProjectForms() {
   const s = useProjectStore();
   const priceFile = useRef<HTMLInputElement>(null);
+  const [activeSection, setActiveSection] = useState<
+    "object" | "dimensions" | "panels" | "openings" | "structural" | "price" | "manager"
+  >("dimensions");
+  const sections = [
+    ["object", "⌖", "Объект"],
+    ["dimensions", "⌗", "Размеры и крыша"],
+    ["panels", "▤", "Панели"],
+    ["openings", "▢", "Проёмы"],
+    ["structural", "⌂", "Конструкции"],
+    ["price", "₸", "Расчёт и цены"],
+    ["manager", "♟", "Менеджер"],
+  ] as const;
   return (
-    <div className="form-stack">
-      <ObjectForm />
-      <section>
+    <div className="form-stack bottom-form-stack">
+      <nav className="parameter-sections" aria-label="Разделы параметров">
+        {sections.map(([id, icon, label]) => (
+          <button
+            type="button"
+            key={id}
+            className={activeSection === id ? "active" : ""}
+            onClick={() => setActiveSection(id)}
+          >
+            <span aria-hidden="true">{icon}</span>
+            {label}
+          </button>
+        ))}
+      </nav>
+      <div className="parameter-body">
+        <div className={activeSection === "object" ? "parameter-group active" : "parameter-group"}>
+          <ObjectForm />
+        </div>
+        <div className={activeSection === "dimensions" ? "parameter-group active" : "parameter-group"}>
+          <section>
         <h3>Здание</h3>
         <Num
           label="Длина"
@@ -548,11 +577,19 @@ export function ProjectForms() {
           onChange={(n) => s.patchRoof({ gableOverhang: n })}
         />
       </section>
-      <PanelForm kind="wallPanelSystem" title="Стеновые панели" />
-      <PanelForm kind="roofPanelSystem" title="Кровельные панели" />
-      <OpeningsForm />
-      <StructuralForm />
-      <section>
+        </div>
+        <div className={activeSection === "panels" ? "parameter-group active" : "parameter-group"}>
+          <PanelForm kind="wallPanelSystem" title="Стеновые панели" />
+          <PanelForm kind="roofPanelSystem" title="Кровельные панели" />
+        </div>
+        <div className={activeSection === "openings" ? "parameter-group active" : "parameter-group"}>
+          <OpeningsForm />
+        </div>
+        <div className={activeSection === "structural" ? "parameter-group active" : "parameter-group"}>
+          <StructuralForm />
+        </div>
+        <div className={activeSection === "price" ? "parameter-group active" : "parameter-group"}>
+          <section>
         <h3>Расчет и цены</h3>
         <button type="button" onClick={() => priceFile.current?.click()}>
           Загрузить прайс Excel
@@ -731,7 +768,11 @@ export function ProjectForms() {
           Объединять зеркальные
         </label>
       </section>
-      <ManagerCard />
+        </div>
+        <div className={activeSection === "manager" ? "parameter-group active" : "parameter-group"}>
+          <ManagerCard />
+        </div>
+      </div>
     </div>
   );
 }
